@@ -1,7 +1,6 @@
 // src/services/driveStorage.ts
-// Google Drive Storage Service
-// Stores application state in a single JSON file in Google Drive.
-// Includes Session Persistence, Auto-Refresh handling, Google Sheets Sync, and Gmail Integration.
+// Updated to use VPS Database instead of Google Drive
+// Keeps Google Login (for Identity) and Gmail Integration (for OCR)
 
 const HARDCODED_CLIENT_ID = '76622516302-malmubqvj1ms3klfsgr5p6jaom2o7e8s.apps.googleusercontent.com';
 const CLIENT_ID_KEY = 'VITE_GOOGLE_CLIENT_ID';
@@ -11,10 +10,8 @@ const STORAGE_TOKEN_KEY = 'psx_drive_access_token';
 const STORAGE_USER_KEY = 'psx_drive_user_profile';
 const STORAGE_EXPIRY_KEY = 'psx_drive_token_expiry';
 
-// SCOPES: Updated to include 'gmail.readonly'
-const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.readonly openid';
-const DB_FILE_NAME = 'psx_tracker_data.json';
-const SHEET_FILE_NAME = 'PSX_Portfolio_Transactions'; // Name of the Google Sheet
+// SCOPES: Removed Drive & Sheets. Kept Profile & Gmail
+const SCOPES = 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/gmail.readonly openid';
 
 let tokenClient: any = null;
 let accessToken: string | null = null;
@@ -46,7 +43,6 @@ const getEnv = (key: string) => {
   return undefined;
 };
 
-// Prioritize the User's Env Variable over the Hardcoded one
 const RAW_ID = getEnv(CLIENT_ID_KEY) || HARDCODED_CLIENT_ID;
 const CLIENT_ID = (RAW_ID && RAW_ID.includes('.apps.googleusercontent.com')) ? RAW_ID : undefined;
 
@@ -163,10 +159,6 @@ export const signOutDrive = () => {
     }
 };
 
-/**
- * EXPORTED: Retrieves a valid access token, refreshing it if necessary.
- * Required for external services like Google Sheets data fetching.
- */
 export const getValidToken = async (): Promise<string | null> => {
     const now = Date.now();
     if (accessToken && tokenExpiryTime > now + 60000) {
@@ -181,187 +173,63 @@ export const getValidToken = async (): Promise<string | null> => {
     });
 };
 
-// --- Drive File Operations ---
-
-const findDbFile = async () => {
-    const token = await getValidToken();
-    if (!token) return null;
-
-    const query = `name = '${DB_FILE_NAME}' and trashed = false`;
-    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id, name)`;
-    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    
-    if (response.status === 401) {
-        localStorage.removeItem(STORAGE_TOKEN_KEY); 
-        const newToken = await getValidToken();
-        if (!newToken) return null;
-        const retryResp = await fetch(url, { headers: { Authorization: `Bearer ${newToken}` } });
-        const data = await retryResp.json();
-        if (data.files && data.files.length > 0) return data.files[0].id;
-        return null;
-    }
-
-    const data = await response.json();
-    if (data.files && data.files.length > 0) return data.files[0].id;
-    return null;
-};
+// --- NEW: VPS Database Operations (Replaces Drive) ---
 
 export const saveToDrive = async (data: any) => {
-    const token = await getValidToken();
-    if (!token) return;
-
+    const userStr = localStorage.getItem(STORAGE_USER_KEY);
+    if (!userStr) return;
+    
     try {
-        const fileId = await findDbFile();
+        const user = JSON.parse(userStr);
         const contentToSave = {
             ...data,
             lastModified: new Date().toISOString()
         };
-        const fileContent = JSON.stringify(contentToSave);
-        const metadata = { name: DB_FILE_NAME, mimeType: 'application/json' };
-        const form = new FormData();
-        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-        form.append('file', new Blob([fileContent], { type: 'application/json' }));
 
-        const method = fileId ? 'PATCH' : 'POST';
-        const endpoint = fileId 
-            ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`
-            : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
-
-        await fetch(endpoint, {
-            method,
-            headers: { Authorization: `Bearer ${token}` },
-            body: form
+        await fetch('/api/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: user.email,
+                data: contentToSave
+            })
         });
+        console.log("Data saved to VPS database.");
     } catch (e) {
-        console.error("Save to Drive failed", e);
+        console.error("VPS Save failed", e);
     }
 };
 
 export const loadFromDrive = async () => {
-    const token = await getValidToken();
-    if (!token) return null;
-
-    try {
-        const fileId = await findDbFile();
-        if (!fileId) return null;
-
-        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
-        if (response.ok) return await response.json();
-    } catch (e) {
-        console.error("Load from Drive failed", e);
-    }
-    return null;
-};
-
-// --- Google Sheets Sync ---
-
-const findSheetFile = async () => {
-    const token = await getValidToken();
-    if (!token) return null;
-
-    const query = `name = '${SHEET_FILE_NAME}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`;
-    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id, name)`;
-    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await response.json();
-    if (data.files && data.files.length > 0) return data.files[0].id;
-    return null;
-};
-
-const createSheetFile = async () => {
-    const token = await getValidToken();
-    if (!token) return null;
-
-    const metadata = { name: SHEET_FILE_NAME, mimeType: 'application/vnd.google-apps.spreadsheet' };
-    const response = await fetch('https://www.googleapis.com/drive/v3/files', {
-        method: 'POST',
-        headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(metadata)
-    });
+    const userStr = localStorage.getItem(STORAGE_USER_KEY);
+    if (!userStr) return null;
     
-    if (response.status === 403) {
-        alert("Action Forbidden: Please Sign Out and Sign In again to grant 'Create Spreadsheets' permission.");
-        return null;
+    try {
+        const user = JSON.parse(userStr);
+        const response = await fetch(`/api/load/${encodeURIComponent(user.email)}`);
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+            console.log("Data loaded from VPS database.");
+            return result.data;
+        }
+    } catch (e) {
+        console.error("VPS Load failed", e);
     }
-    const data = await response.json();
-    return data.id;
+    return null;
 };
+
+// --- Google Sheets Sync (Disabled/Bypassed) ---
 
 export const getGoogleSheetId = async (): Promise<string | null> => {
-    return await findSheetFile();
+    return null; // Disabled
 };
 
 export const syncTransactionsToSheet = async (transactions: any[], portfolios: any[]) => {
-    const token = await getValidToken();
-    if (!token) return;
-
-    try {
-        let sheetId = await findSheetFile();
-        if (!sheetId) sheetId = await createSheetFile();
-        if (!sheetId) return;
-
-        const metaResp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties`, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
-        
-        if (metaResp.status === 403) {
-             alert("Sync Failed: The app does not have permission to access Google Sheets. Please re-authenticate.");
-             return;
-        }
-
-        const meta = await metaResp.json();
-        const existingTitles = new Set(meta.sheets?.map((s: any) => s.properties.title) || []);
-        const headers = ['Date', 'Type', 'Category', 'Ticker', 'Broker', 'Quantity', 'Price', 'Commission', 'Tax', 'CDC Charges', 'Other Fees', 'Total Amount', 'Notes', 'ID'];
-
-        for (const p of portfolios) {
-            const sheetTitle = p.name.replace(/[*?:\/\\\[\]]/g, '_').substring(0, 100);
-            if (!existingTitles.has(sheetTitle)) {
-                await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}:batchUpdate`, {
-                    method: 'POST',
-                    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ requests: [{ addSheet: { properties: { title: sheetTitle } } }] })
-                });
-            }
-
-            const pTx = transactions.filter(t => t.portfolioId === p.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-            const rows = pTx.map(t => {
-                let total = 0;
-                const gross = t.quantity * t.price;
-                const fees = (t.commission||0) + (t.tax||0) + (t.cdcCharges||0) + (t.otherFees||0);
-                if (t.type === 'BUY') total = gross + fees;
-                else if (t.type === 'SELL') total = gross - fees;
-                else if (t.type === 'DIVIDEND') total = gross - (t.tax || 0); 
-                else if (t.type === 'TAX') total = -Math.abs(t.price);
-                else if (t.type === 'DEPOSIT') total = t.price;
-                else if (t.type === 'WITHDRAWAL' || t.type === 'ANNUAL_FEE') total = -Math.abs(t.price);
-                else if (t.type === 'OTHER') total = t.category === 'OTHER_TAX' ? -Math.abs(t.price) : t.price;
-                else if (t.type === 'HISTORY') total = t.price;
-
-                return [t.date, t.type, t.category || '', t.ticker, t.broker || '', t.quantity, t.price, t.commission || 0, t.tax || 0, t.cdcCharges || 0, t.otherFees || 0, total, t.notes || '', t.id];
-            });
-
-            const range = `'${sheetTitle}'!A:Z`;
-            await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}:clear`, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}` }
-            });
-
-            await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/'${sheetTitle}'!A1?valueInputOption=USER_ENTERED`, {
-                method: 'PUT',
-                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ values: [headers, ...rows] })
-            });
-        }
-    } catch (e) {
-        console.error("Sheet Sync Failed", e);
-    }
+    return Promise.resolve(); // Disabled
 };
 
-// --- GMAIL INTEGRATION FUNCTIONS ---
+// --- GMAIL INTEGRATION FUNCTIONS (KEPT INTACT FOR EMAIL SCANNER) ---
 
 export const searchGmailMessages = async (query: string) => {
     const token = await getValidToken();
