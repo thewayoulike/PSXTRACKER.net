@@ -766,7 +766,7 @@ const App: React.FC = () => {
                  <div className="scale-75 sm:scale-100 origin-left">
                    <Logo />
                  </div>
-                <p className="hidden md:block text-sm font-bold tracking-wide mt-1 ml-1 whitespace-nowrap"><span className="text-slate-700 dark:text-slate-300">KNOW MORE.</span> <span className="text-cyan-500">EARN MORE. LIVE TEST!</span></p>
+                <p className="hidden md:block text-sm font-bold tracking-wide mt-1 ml-1 whitespace-nowrap"><span className="text-slate-700 dark:text-slate-300">KNOW MORE.</span> <span className="text-cyan-500">EARN MORE.</span></p>
              </div>
              <div className="md:hidden">
                 <ThemeToggle />
