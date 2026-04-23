@@ -7,11 +7,13 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const { Database } = sqlite3pkg;
+
 const app = express();
 const port = 3001;
 
 app.use(bodyParser.json({ limit: '10mb' }));
 
+// Native Fetch Proxy for PSX
 app.get(['/proxy', '/api/proxy'], async (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).send("No URL provided");
@@ -28,6 +30,7 @@ app.get(['/proxy', '/api/proxy'], async (req, res) => {
 
 const dbPath = path.join(__dirname, 'psx_data.db');
 const db = new Database(dbPath);
+
 db.serialize(() => {
     db.run("CREATE TABLE IF NOT EXISTS user_data (email TEXT PRIMARY KEY, data TEXT, last_updated DATETIME DEFAULT CURRENT_TIMESTAMP)");
 });
