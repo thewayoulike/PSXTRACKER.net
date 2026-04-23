@@ -13,8 +13,8 @@ const port = 3001;
 
 app.use(bodyParser.json({ limit: '10mb' }));
 
-// --- 1. VPS PROXY TO BYPASS CLOUDFLARE (Now correctly listening on /api/proxy) ---
-app.get('/api/proxy', async (req, res) => {
+// --- FIX: Listen on /proxy because Nginx strips the /api prefix ---
+app.get('/proxy', async (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).send("No URL provided");
     
@@ -47,14 +47,14 @@ app.get('/api/proxy', async (req, res) => {
     }
 });
 
-// 2. Database Connection
+// 1. Database Connection
 const dbPath = path.join(__dirname, 'psx_data.db');
 const db = new Database(dbPath, (err) => {
     if (err) console.error("Database connection error:", err.message);
     else console.log("Database Connected: " + dbPath);
 });
 
-// 3. Initialize Table
+// 2. Initialize Table
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS user_data (
         email TEXT PRIMARY KEY,
@@ -63,16 +63,16 @@ db.serialize(() => {
     )`);
 });
 
-// 4. API: Load Data (Corrected)
-app.get('/api/load/:email', (req, res) => {
+// 3. API: Load Data
+app.get('/load/:email', (req, res) => {
     db.get("SELECT data FROM user_data WHERE email = ?", [req.params.email], (err, row) => {
         if (err) return res.status(500).json({ success: false, error: err.message });
         res.json({ success: true, data: row ? JSON.parse(row.data) : null });
     });
 });
 
-// 5. API: Save Data (Corrected)
-app.post('/api/save', (req, res) => {
+// 4. API: Save Data
+app.post('/save', (req, res) => {
     const { email, data } = req.body;
     if (!email || !data) return res.status(400).json({ success: false, message: "Missing data" });
     const query = `INSERT INTO user_data (email, data, last_updated) 
@@ -84,8 +84,8 @@ app.post('/api/save', (req, res) => {
     });
 });
 
-// 6. API: Delete Data (Corrected)
-app.delete('/api/delete/:email', (req, res) => {
+// 5. API: Delete Data
+app.delete('/delete/:email', (req, res) => {
     db.run(`DELETE FROM user_data WHERE email = ?`, [req.params.email], (err) => {
         if (err) return res.status(500).json({ success: false });
         res.json({ success: true });
