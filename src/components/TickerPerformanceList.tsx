@@ -8,7 +8,7 @@ import {
 import { Card } from './ui/Card';
 import { exportToCSV } from '../utils/export';
 import { fetchCompanyFundamentals, FundamentalsData } from '../services/financials';
-import { getSector } from '../services/sectors'; // <-- IMPORTED BULLETPROOF FALLBACK
+import { getSector } from '../services/sectors';
 
 interface TickerPerformanceListProps {
   transactions: Transaction[];
@@ -59,6 +59,16 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
   const [fundamentals, setFundamentals] = useState<FundamentalsData | null>(null);
   const [loadingFundamentals, setLoadingFundamentals] = useState(false);
   const [financialPeriod, setFinancialPeriod] = useState<'Annual' | 'Quarterly'>('Annual');
+
+  // --- BULLETPROOF SECTOR HELPER ---
+  // Rejects the literal string "Unknown Sector" and forces fallback to your local master list
+  const getValidSector = useCallback((ticker: string) => {
+      const scraped = sectors[ticker];
+      if (scraped && scraped !== 'Unknown Sector' && scraped !== 'Unknown') {
+          return scraped;
+      }
+      return getSector(ticker);
+  }, [sectors]);
 
   const loadFundamentals = useCallback(async () => {
       if (analysisMode === 'STOCK' && selectedTicker) {
@@ -184,9 +194,10 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
           const dividendYieldOnCost = lifetimeBuyCost > 0 ? (totalDividends / lifetimeBuyCost) * 100 : 0;
           const avgDPS = dividendSharesCount > 0 ? totalDividends / dividendSharesCount : 0;
 
-          return { ticker, sector: sectors[ticker] || getSector(ticker) || 'Unknown', status: ownedQty > 0.01 ? 'Active' : 'Closed', ownedQty, soldQty, currentPrice, currentAvgPrice, currentValue, totalCostBasis, realizedPL, unrealizedPL, totalNetReturn, totalDividends, dividendTax, netDividends: totalDividends - dividendTax, dividendCount, dividendSharesCount, dividendYieldOnCost, avgDPS, feesPaid, totalComm, totalTradingTax, totalCDC, totalOther, tradeCount, buyCount, sellCount, lifetimeROI, allocationPercent, breakEvenPrice, lifetimeBuyCost, holdingPeriod };
+          // Apply bulletproof fallback here
+          return { ticker, sector: getValidSector(ticker), status: ownedQty > 0.01 ? 'Active' : 'Closed', ownedQty, soldQty, currentPrice, currentAvgPrice, currentValue, totalCostBasis, realizedPL, unrealizedPL, totalNetReturn, totalDividends, dividendTax, netDividends: totalDividends - dividendTax, dividendCount, dividendSharesCount, dividendYieldOnCost, avgDPS, feesPaid, totalComm, totalTradingTax, totalCDC, totalOther, tradeCount, buyCount, sellCount, lifetimeROI, allocationPercent, breakEvenPrice, lifetimeBuyCost, holdingPeriod };
       }).sort((a, b) => a.ticker.localeCompare(b.ticker));
-  }, [transactions, currentPrices, sectors, totalPortfolioValue]);
+  }, [transactions, currentPrices, getValidSector, totalPortfolioValue]);
 
   const allSectorStats = useMemo(() => {
       const sectorMap: Record<string, SectorStats> = {};
@@ -220,7 +231,7 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
                   .filter(s => !existing.has(s))
                   .map(s => ({
                       ticker: s,
-                      sector: sectors[s] || getSector(s) || 'Unknown', // <-- BULLETPROOF FALLBACK
+                      sector: getValidSector(s), // Apply bulletproof fallback here
                       totalNetReturn: 0,
                       isNotHeld: true
                   }));
@@ -234,7 +245,7 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
           if (!searchTerm) return allSectorStats;
           return allSectorStats.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()));
       }
-  }, [analysisMode, searchTerm, allTickerStats, allSectorStats, allSymbols, sectors]);
+  }, [analysisMode, searchTerm, allTickerStats, allSectorStats, allSymbols, getValidSector]);
 
   const selectedStockStats = useMemo(() => {
       if (analysisMode !== 'STOCK' || !selectedTicker) return null;
@@ -243,7 +254,7 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
 
       return {
           ticker: selectedTicker,
-          sector: sectors[selectedTicker] || getSector(selectedTicker) || 'Unknown', // <-- BULLETPROOF FALLBACK
+          sector: getValidSector(selectedTicker), // Apply bulletproof fallback here
           status: 'Not Held',
           ownedQty: 0, soldQty: 0, currentPrice: currentPrices[selectedTicker] || 0, currentAvgPrice: 0, currentValue: 0,
           totalCostBasis: 0, realizedPL: 0, unrealizedPL: 0, totalNetReturn: 0,
@@ -254,7 +265,7 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
           lifetimeROI: 0, allocationPercent: 0, breakEvenPrice: 0,
           lifetimeBuyCost: 0, holdingPeriod: '-'
       };
-  }, [selectedTicker, allTickerStats, analysisMode, sectors, currentPrices]);
+  }, [selectedTicker, allTickerStats, analysisMode, getValidSector, currentPrices]);
 
   const selectedSectorStats = useMemo(() => {
       if (analysisMode !== 'SECTOR' || !selectedSector) return null;
@@ -618,7 +629,6 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
                                     const stockStats = allTickerStats.find(s => s.ticker === ticker);
                                     if (!stockStats) return null;
                                     
-                                    // Calculate % of Sector holding
                                     const percentOfSector = selectedSectorStats.currentValue > 0 
                                         ? (stockStats.currentValue / selectedSectorStats.currentValue) * 100 
                                         : 0;
@@ -722,7 +732,7 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
             </div>
         )}
 
-        {/* --- NEW: SELECTED BUT NOT FOUND STATE (For Sectors Only) --- */}
+        {/* --- SELECTED BUT NOT FOUND STATE (For Sectors Only) --- */}
         {isSelectionNotFound && (
             <div className="flex flex-col items-center justify-center py-20 opacity-70 animate-in fade-in zoom-in-95"> 
                 <div className="w-24 h-24 bg-amber-50 dark:bg-amber-900/20 rounded-full flex items-center justify-center mb-4 text-amber-400 dark:text-amber-500"> 
