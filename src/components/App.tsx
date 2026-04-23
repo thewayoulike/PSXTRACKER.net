@@ -20,14 +20,15 @@ import { TransferModal } from './TransferModal';
 import { TradingSimulator } from './TradingSimulator';
 import { FairValueCalculator } from './FairValueCalculator';
 import { getSector } from '../services/sectors';
-import { fetchBatchPSXPrices, setScrapingApiKey, setWebScrapingAIKey } from '../services/psxData';
+
+// --- ADDED fetchAllPSXSymbols HERE ---
+import { fetchBatchPSXPrices, setScrapingApiKey, setWebScrapingAIKey, fetchAllPSXSymbols } from '../services/psxData';
 import { setGeminiApiKey } from '../services/gemini';
 import { Edit3, Plus, FolderOpen, Trash2, PlusCircle, X, RefreshCw, Loader2, Coins, LogOut, Save, Briefcase, Key, LayoutDashboard, History, CheckCircle2, Pencil, Layers, ChevronDown, CheckSquare, Square, ChartCandlestick, CalendarClock, ArrowRightLeft, Calculator, TrendingUp } from 'lucide-react'; 
 import { useIdleTimer } from '../hooks/useIdleTimer'; 
 import { ThemeToggle } from './ui/ThemeToggle'; 
 import * as Popover from '@radix-ui/react-popover'; 
 
-// Import updated drive storage with VPS logic
 import { 
     initDriveAuth, 
     signInWithDrive, 
@@ -38,7 +39,7 @@ import {
     getGoogleSheetId, 
     DriveUser, 
     hasValidSession,
-    deleteUserData // New function added for privacy compliance
+    deleteUserData
 } from '../services/driveStorage';
 import { calculateXIRR } from '../utils/finance';
 
@@ -68,6 +69,9 @@ const App: React.FC = () => {
   
   const [viewTicker, setViewTicker] = useState<string | null>(null);
   
+  // --- ADDED STATE FOR ALL SYMBOLS ---
+  const [allSymbols, setAllSymbols] = useState<string[]>([]);
+
   const [brokers, setBrokers] = useState<Broker[]>(() => {
       try {
           const saved = localStorage.getItem('psx_brokers');
@@ -213,7 +217,6 @@ const App: React.FC = () => {
 
   const handleManualLogout = () => { if (window.confirm("Logout and clear local data?")) { performLogout(); } };
   
-  // Privacy Action: Permanently delete data from VPS
   const handleWipeData = async () => {
       if (!driveUser) return;
       const confirmed = window.confirm("⚠️ DANGER: This will permanently delete ALL your portfolio data and history from our servers. This cannot be undone. Proceed?");
@@ -241,6 +244,13 @@ const App: React.FC = () => {
           setCombinedPortfolioIds(new Set(portfolios.map(p => p.id)));
       }
   }, [isCombinedView, portfolios, combinedPortfolioIds.size]);
+
+  // --- FETCH ALL SYMBOLS ON MOUNT ---
+  useEffect(() => {
+      fetchAllPSXSymbols().then(symbols => {
+          if (symbols && symbols.length > 0) setAllSymbols(symbols);
+      });
+  }, []);
 
   useEffect(() => {
       initDriveAuth(async (user) => {
@@ -1135,6 +1145,7 @@ const App: React.FC = () => {
           </div>
       )}
       
+      {/* --- PASSED ALL SYMBOLS TO TRANSACTION FORM --- */}
       <TransactionForm 
           isOpen={showAddModal} 
           onClose={() => setShowAddModal(false)} 
@@ -1148,6 +1159,7 @@ const App: React.FC = () => {
           freeCash={stats.freeCash}
           savedScannedTrades={tradeScanResults}
           onSaveScannedTrades={handleUpdateTradeScanResults}
+          allSymbols={allSymbols} 
       />
       <BrokerManager isOpen={showBrokerManager} onClose={() => setShowBrokerManager(false)} brokers={brokers} onAddBroker={handleAddBroker} onUpdateBroker={handleUpdateBroker} onDeleteBroker={handleDeleteBroker} />
       
