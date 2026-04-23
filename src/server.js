@@ -1,3 +1,4 @@
+cat << 'EOF' > /var/www/psxtracker/server.js
 import express from 'express';
 import sqlite3pkg from 'sqlite3';
 import bodyParser from 'body-parser';
@@ -14,7 +15,6 @@ const port = 3001;
 app.use(bodyParser.json({ limit: '10mb' }));
 
 // --- NATIVE FETCH PROXY (NO CLOUDSCRAPER NEEDED) ---
-// Listening on both /proxy and /api/proxy to guarantee it catches the Nginx request
 app.get(['/proxy', '/api/proxy'], async (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).send("No URL provided");
@@ -81,3 +81,4 @@ app.delete(['/delete/:email', '/api/delete/:email'], (req, res) => {
 });
 
 app.listen(port, "0.0.0.0", () => console.log(`Backend listening on port ${port}`));
+EOF
