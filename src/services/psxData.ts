@@ -26,7 +26,7 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout 
 const fetchUrlWithFallback = async (targetUrl: string): Promise<string | null> => {
     // 1. TRY YOUR PRIVATE VPS PROXY FIRST (No CORS, Ultra-fast)
     try {
-        const proxyUrl = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
+        const proxyUrl = '/api/proxy?url=' + encodeURIComponent(targetUrl);
         const response = await fetchWithTimeout(proxyUrl, {}, 8000); 
         if (response.ok) {
             const text = await response.text();
