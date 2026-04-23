@@ -3,6 +3,7 @@ import sqlite3pkg from 'sqlite3';
 import bodyParser from 'body-parser';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import cloudscraper from 'cloudscraper';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,22 +14,23 @@ const port = 3001;
 
 app.use(bodyParser.json({ limit: '10mb' }));
 
-// --- NEW: THE "SMUGGLER" PROXY ROUTE ---
-// Hidden under /api/load/ so Nginx lets it pass to the backend!
-app.get('/api/load/proxy/fetch', async (req, res) => {
+// --- YOUR PRIVATE API TO BYPASS CLOUDFLARE ---
+app.get('/api/proxy', async (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).send("No URL provided");
     
     try {
-        const response = await fetch(targetUrl, {
+        console.log(`[API] Fetching: ${targetUrl}`);
+        // Cloudscraper disguises the request as a real browser
+        const data = await cloudscraper.get({
+            uri: targetUrl,
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
             }
         });
-        const data = await response.text();
         res.send(data);
     } catch (error) {
-        console.error("Proxy Error:", error);
+        console.error("[API] Cloudflare Bypass Failed:", error.message);
         res.status(500).json({ error: error.message });
     }
 });
