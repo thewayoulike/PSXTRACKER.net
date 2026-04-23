@@ -2,46 +2,27 @@ import { CompanyPayout } from '../types';
 import { getValidToken } from './driveStorage';
 
 export interface CompanyFinancials {
-  year: string;
-  sales: string;
-  totalIncome: string;
-  profitAfterTax: string;
-  eps: string;
-  // NEW FIELDS ADDED FOR AUTO-FILL
-  bookValue?: string;
-  totalLiabilities?: string;
-  totalEquity?: string;
-  currentAssets?: string;
-  currentLiabilities?: string;
-  inventory?: string;
-  fcf?: string;
+  year: string; sales: string; totalIncome: string; profitAfterTax: string; eps: string;
+  bookValue?: string; totalLiabilities?: string; totalEquity?: string;
+  currentAssets?: string; currentLiabilities?: string; inventory?: string; fcf?: string;
 }
 
 export interface CompanyRatios {
-  year: string;
-  netProfitMargin: string;
-  epsGrowth: string;
-  peg: string;
+  year: string; netProfitMargin: string; epsGrowth: string; peg: string;
 }
 
 export interface FundamentalsData {
-    annual: {
-        financials: CompanyFinancials[];
-        ratios: CompanyRatios[];
-    };
-    quarterly: {
-        financials: CompanyFinancials[];
-        ratios: CompanyRatios[];
-    };
+    annual: { financials: CompanyFinancials[]; ratios: CompanyRatios[]; };
+    quarterly: { financials: CompanyFinancials[]; ratios: CompanyRatios[]; };
 }
 
+// USE VPS PROXY FIRST
 const getProxies = (targetUrl: string) => [
-    `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&t=${Date.now()}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
-    `https://thingproxy.freeboard.io/fetch/${targetUrl}`,
+    `/proxy?url=${encodeURIComponent(targetUrl)}`,
+    `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&t=${Date.now()}`
 ];
 
-// --- 1. Fetch Company Fundamentals (PSX Scraping) ---
+// --- 1. Fetch Company Fundamentals ---
 export const fetchCompanyFundamentals = async (ticker: string): Promise<FundamentalsData | null> => {
   const targetUrl = `https://dps.psx.com.pk/company/${ticker.toUpperCase()}`;
   const proxies = getProxies(targetUrl);
@@ -85,8 +66,6 @@ export const fetchCompanyFundamentals = async (ticker: string): Promise<Fundamen
             const income = getRowData(['Total Income']);
             const profit = getRowData(['Profit after Taxation', 'Profit After Tax', 'Net Profit']);
             const eps = getRowData(['EPS', 'Earnings per share']);
-            
-            // NEW BALANCE SHEET EXTRACTIONS
             const bookValue = getRowData(['Break-up value', 'Book Value', 'Net Asset Value']);
             const totalLiabilities = getRowData(['Total Liabilities']);
             const totalEquity = getRowData(['Total Equity', 'Shareholders Equity']);
@@ -98,18 +77,9 @@ export const fetchCompanyFundamentals = async (ticker: string): Promise<Fundamen
             periods.forEach((period, i) => {
                 if (period) {
                     data.push({ 
-                        year: period, 
-                        sales: sales[i] || '-', 
-                        totalIncome: income[i] || '-', 
-                        profitAfterTax: profit[i] || '-', 
-                        eps: eps[i] || '-',
-                        bookValue: bookValue[i] || '-',
-                        totalLiabilities: totalLiabilities[i] || '-',
-                        totalEquity: totalEquity[i] || '-',
-                        currentAssets: currentAssets[i] || '-',
-                        currentLiabilities: currentLiabilities[i] || '-',
-                        inventory: inventory[i] || '-',
-                        fcf: fcf[i] || '-'
+                        year: period, sales: sales[i] || '-', totalIncome: income[i] || '-', profitAfterTax: profit[i] || '-', eps: eps[i] || '-',
+                        bookValue: bookValue[i] || '-', totalLiabilities: totalLiabilities[i] || '-', totalEquity: totalEquity[i] || '-',
+                        currentAssets: currentAssets[i] || '-', currentLiabilities: currentLiabilities[i] || '-', inventory: inventory[i] || '-', fcf: fcf[i] || '-'
                     });
                 }
             });
@@ -167,17 +137,14 @@ export const fetchMarketWideDividends = async (): Promise<CompanyPayout[]> => {
     if (!token) throw new Error("Authentication required for Google Sheets");
 
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${RANGE}`;
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
 
     if (!response.ok) throw new Error(`Google Sheets API Error: ${response.status}`);
 
     const json = await response.json();
     const rows = json.values || []; 
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
 
     return rows.map((row: any[]) => {
         const rawDiv = row[2] || '0';
@@ -189,8 +156,6 @@ export const fetchMarketWideDividends = async (): Promise<CompanyPayout[]> => {
 
         if (isNaN(xDate.getTime()) || xDate < today) return null; 
 
-        const isDueToday = xDate.getTime() === today.getTime();
-
         return {
             ticker: row[0] || 'Unknown',
             announceDate: row[1] || '-',
@@ -198,7 +163,7 @@ export const fetchMarketWideDividends = async (): Promise<CompanyPayout[]> => {
             details: isNaN(pkrAmount) ? 'Dividend' : `Div: Rs. ${pkrAmount.toFixed(2)}`, 
             bookClosure: `Ex-Date: ${dateStr}`,
             isUpcoming: true,
-            isDueToday: isDueToday 
+            isDueToday: xDate.getTime() === today.getTime()
         };
     })
     .filter((p): p is CompanyPayout & { isDueToday: boolean } => p !== null)
@@ -208,13 +173,10 @@ export const fetchMarketWideDividends = async (): Promise<CompanyPayout[]> => {
         return dateA.getTime() - dateB.getTime();
     });
 
-  } catch (e) {
-    console.error("Google Sheet Fetch Failed:", e);
-    return [];
-  }
+  } catch (e) { return []; }
 };
 
-// --- 3. Per-Company Payouts (Fallback PSX Logic) ---
+// --- 3. Per-Company Payouts ---
 export const fetchCompanyPayouts = async (ticker: string): Promise<CompanyPayout[]> => {
   const targetUrl = `https://dps.psx.com.pk/company/${ticker.toUpperCase()}`;
   const proxies = getProxies(targetUrl);
@@ -258,7 +220,7 @@ export const fetchCompanyPayouts = async (ticker: string): Promise<CompanyPayout
         });
         return payouts;
       }
-    } catch (e) { console.warn(`Proxy failed for payouts`, e); }
+    } catch (e) { }
   }
   return [];
 };
