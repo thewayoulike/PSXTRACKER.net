@@ -235,29 +235,31 @@ const parseMarketWatchTable = (html: string, results: Record<string, any>, targe
     } catch (e) { }
 };
 
-// --- NEW FUNCTION TO GET ALL SYMBOLS AND THEIR SECTORS SIMULTANEOUSLY ---
+// --- DEBUG VERSION OF SCRAPER ---
 export const fetchAllPSXSymbols = async (): Promise<{ symbols: string[], sectors: Record<string, string> }> => {
     const symbols = new Set<string>();
     const sectorsMap: Record<string, string> = {};
 
-    // 1. ATTEMPT TO SCRAPE THE DEFINITIVE LISTINGS PAGE (Contains ALL stocks, even illiquid ones)
+    console.log("🔍 STEP 1: Attempting to fetch PSX Listings...");
+    
     try {
         const listingsUrl = `https://dps.psx.com.pk/listings`;
         const listingsHtml = await fetchUrlWithFallback(listingsUrl);
 
+        console.log("🔍 STEP 2: Downloaded HTML Length:", listingsHtml ? listingsHtml.length : "FAILED");
+
         if (listingsHtml && listingsHtml.length > 500) {
             const parser = new DOMParser();
             const doc = parser.parseFromString(listingsHtml, "text/html");
-            
-            // PSX Listings layout: Column 0 = Symbol, Column 2 = Sector
             const tables = doc.querySelectorAll("table");
+            
+            console.log(`🔍 STEP 3: Found ${tables.length} tables on the page.`);
 
-            tables.forEach(table => {
+            tables.forEach((table, tIdx) => {
                 const rows = table.querySelectorAll("tr");
                 let symCol = 0; 
                 let secCol = 2; 
 
-                // Dynamic header detection just in case PSX changes the column order
                 if (rows.length > 0) {
                     const headers = rows[0].querySelectorAll("th, td");
                     headers.forEach((h, idx) => {
@@ -265,35 +267,44 @@ export const fetchAllPSXSymbols = async (): Promise<{ symbols: string[], sectors
                         if (txt === 'SYMBOL') symCol = idx;
                         if (txt === 'SECTOR') secCol = idx;
                     });
+                    console.log(`🔍 Table ${tIdx} Headers -> Symbol Col: ${symCol}, Sector Col: ${secCol}`);
                 }
 
+                let addedFromThisTable = 0;
+
                 rows.forEach((row, rIdx) => {
-                    if (rIdx === 0) return; // Skip headers
+                    if (rIdx === 0) return; 
                     const cols = row.querySelectorAll("td");
                     if (cols.length <= Math.max(symCol, secCol)) return;
 
-                    let symbol = cols[symCol].textContent?.trim().toUpperCase() || "";
-                    let sector = cols[secCol].textContent?.trim() || "";
+                    let symbol = cols[symCol]?.textContent?.trim().toUpperCase() || "";
+                    let sector = cols[secCol]?.textContent?.trim() || "";
                     
                     if (symbol) {
-                        symbol = symbol.split(/[\s-]/)[0]; // Clean up things like "OGDC (Right)"
+                        symbol = symbol.split(/[\s-]/)[0];
                         if (symbol.length >= 2 && symbol.length <= 8 && !TICKER_BLACKLIST.includes(symbol) && isNaN(Number(symbol))) {
                             symbols.add(symbol);
                             if (sector) {
-                                // Save the official sector
                                 sectorsMap[symbol] = SECTOR_CODE_MAP[sector.toUpperCase()] || sector;
+                                addedFromThisTable++;
                             }
                         }
                     }
                 });
+                console.log(`🔍 Added ${addedFromThisTable} stocks from Table ${tIdx}`);
             });
         }
     } catch (e) {
-        console.error("Failed to parse listings page", e);
+        console.error("❌ Failed to parse listings page", e);
     }
+
+    console.log("🔍 FINAL RESULT: Total Symbols:", symbols.size);
+    console.log("🔍 FINAL RESULT: Extracted Sectors Dictionary:", sectorsMap);
 
     // 2. FALLBACK: SCRAPE MARKET WATCH (Just in case the listings page is down)
     if (symbols.size === 0) {
+        console.warn("⚠️ Listings page failed. Falling back to Market Watch...");
+        // ... (The rest of the fallback code remains exactly the same as before)
         try {
             const targetUrl = `https://dps.psx.com.pk/market-watch`;
             const html = await fetchUrlWithFallback(targetUrl);
