@@ -43,7 +43,7 @@ const getEnv = (key: string) => {
   return undefined;
 };
 
-const RAW_ID = getEnv(CLIENT_ID_KEY) || HARDCODED_CLIENT_ID;
+const RAW_ID = HARDCODED_CLIENT_ID;
 const CLIENT_ID = (RAW_ID && RAW_ID.includes('.apps.googleusercontent.com')) ? RAW_ID : undefined;
 
 const loadGoogleScript = () => {
