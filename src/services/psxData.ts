@@ -162,11 +162,174 @@ export const fetchBatchPSXPrices = async (tickers: string[]): Promise<Record<str
 };
 
 export const fetchTopVolumeStocks = async (): Promise<{ symbol: string; price: number; change: number; volume: number }[]> => {
-    // ... [Code omitted for brevity, keep your existing fetchTopVolumeStocks here] ...
-    return [];
+    const targetUrl = `https://dps.psx.com.pk/market-watch`;
+    const html = await fetchUrlWithFallback(targetUrl);
+
+    if (!html || html.length < 500) return [];
+    const stocks: { symbol: string; price: number; change: number; volume: number }[] = [];
+    
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, "text/html");
+        const tables = doc.querySelectorAll("table");
+
+        tables.forEach(table => {
+            const rows = table.querySelectorAll("tr");
+            if (rows.length < 2) return;
+            
+            const headerCells = rows[0].querySelectorAll("th, td");
+            const colMap = { SYMBOL: -1, PRICE: -1, CHANGE: -1, VOLUME: -1 };
+
+            headerCells.forEach((cell, idx) => {
+                const txt = cell.textContent?.trim().toUpperCase() || "";
+                if (txt === 'SYMBOL' || txt === 'SCRIP') colMap.SYMBOL = idx;
+                if (txt === 'CURRENT' || txt === 'PRICE' || txt === 'RATE') colMap.PRICE = idx;
+                if (txt === 'CHANGE' || txt === 'NET CHANGE') colMap.CHANGE = idx;
+                if (txt.includes('VOL') || txt === 'VOLUME') colMap.VOLUME = idx;
+            });
+
+            if (colMap.SYMBOL === -1 || colMap.PRICE === -1) {
+                colMap.SYMBOL = 0; colMap.PRICE = 5; colMap.CHANGE = 6; colMap.VOLUME = 7;
+            }
+
+            rows.forEach((row, rIdx) => {
+                if (rIdx === 0) return; 
+                const cols = row.querySelectorAll("td");
+                const maxIndex = Math.max(colMap.SYMBOL, colMap.PRICE, colMap.CHANGE, colMap.VOLUME);
+                if (cols.length <= maxIndex) return; 
+
+                let symbol = "";
+                const symCell = cols[colMap.SYMBOL];
+                const anchor = symCell.querySelector('a');
+                if (anchor) symbol = anchor.textContent?.trim().toUpperCase() || "";
+                else symbol = (symCell.textContent?.trim().toUpperCase() || "").split(/[\s-]/)[0];
+
+                if (!symbol || TICKER_BLACKLIST.includes(symbol) || symbol.length > 8 || !isNaN(Number(symbol))) return;
+
+                const price = parseFloat(cols[colMap.PRICE]?.textContent?.trim().replace(/,/g, '') || '0');
+                const change = parseFloat(cols[colMap.CHANGE]?.textContent?.trim().replace(/,/g, '') || '0');
+                const volume = parseFloat(cols[colMap.VOLUME]?.textContent?.trim().replace(/,/g, '') || '0');
+
+                if (price > 0 && volume > 0) stocks.push({ symbol, price, change, volume });
+            });
+        });
+
+        return stocks.sort((a, b) => b.volume - a.volume).slice(0, 20);
+    } catch (e) { return []; }
 };
 
 export const fetchAllPSXSymbols = async (): Promise<{ symbols: string[], sectors: Record<string, string> }> => {
-    // ... [Code omitted for brevity, keep your existing fetchAllPSXSymbols here] ...
-    return { symbols: [], sectors: {} };
+    const symbols = new Set<string>();
+    const sectorsMap: Record<string, string> = {};
+
+    try {
+        const listingsUrl = `https://dps.psx.com.pk/listings`;
+        const listingsHtml = await fetchUrlWithFallback(listingsUrl);
+
+        if (listingsHtml && listingsHtml.length > 500) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(listingsHtml, "text/html");
+            const tables = doc.querySelectorAll("table");
+
+            tables.forEach(table => {
+                const rows = table.querySelectorAll("tr");
+                let symCol = 0; let secCol = 2; 
+
+                if (rows.length > 0) {
+                    const headers = rows[0].querySelectorAll("th, td");
+                    headers.forEach((h, idx) => {
+                        const txt = h.textContent?.trim().toUpperCase() || "";
+                        if (txt === 'SYMBOL') symCol = idx;
+                        if (txt === 'SECTOR') secCol = idx;
+                    });
+                }
+
+                rows.forEach((row, rIdx) => {
+                    if (rIdx === 0) return; 
+                    const cols = row.querySelectorAll("td");
+                    if (cols.length <= Math.max(symCol, secCol)) return;
+
+                    let symbol = cols[symCol].textContent?.trim().toUpperCase() || "";
+                    let sector = cols[secCol].textContent?.trim() || "";
+                    
+                    if (symbol) {
+                        symbol = symbol.split(/[\s-]/)[0]; 
+                        if (symbol.length >= 2 && symbol.length <= 8 && !TICKER_BLACKLIST.includes(symbol) && isNaN(Number(symbol))) {
+                            symbols.add(symbol);
+                            if (sector) sectorsMap[symbol] = SECTOR_CODE_MAP[sector.toUpperCase()] || sector;
+                        }
+                    }
+                });
+            });
+        }
+    } catch (e) {}
+
+    if (symbols.size === 0) {
+        try {
+            const targetUrl = `https://dps.psx.com.pk/market-watch`;
+            const html = await fetchUrlWithFallback(targetUrl);
+
+            if (html && html.length > 500) {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, "text/html");
+                const tables = doc.querySelectorAll("table");
+
+                tables.forEach(table => {
+                    const rows = table.querySelectorAll("tr");
+                    let currentGroupHeader = "Unknown Sector";
+                    let symCol = 0;
+                    let secCol = -1; // NEW: Track the Sector Code column
+
+                    // Find where the Sector column is
+                    if (rows.length > 0) {
+                        const headers = rows[0].querySelectorAll("th, td");
+                        headers.forEach((h, idx) => {
+                            const txt = h.textContent?.trim().toUpperCase() || "";
+                            if (txt === 'SYMBOL' || txt === 'SCRIP') symCol = idx;
+                            if (txt === 'SECTOR') secCol = idx;
+                        });
+                    }
+
+                    rows.forEach((row, rIdx) => {
+                        if (rIdx === 0) return; 
+                        const cells = row.querySelectorAll("td, th");
+                        
+                        // Check for grouped rows
+                        if (cells.length === 1 || (cells.length > 0 && cells.length < 4)) {
+                            let text = cells[0]?.textContent?.trim() || "";
+                            text = text.replace(/[\n\r\t]/g, '').trim();
+                            if (text && text.length > 2 && !TICKER_BLACKLIST.includes(text.toUpperCase())) {
+                                currentGroupHeader = text;
+                            }
+                            return;
+                        }
+
+                        if (cells.length <= symCol) return;
+
+                        const symCell = cells[symCol];
+                        let symbol = symCell.querySelector('a')?.textContent?.trim().toUpperCase() || symCell.textContent?.trim().toUpperCase();
+
+                        if (symbol) {
+                            symbol = symbol.split(/[\s-]/)[0];
+                            if (symbol.length >= 2 && symbol.length <= 8 && !TICKER_BLACKLIST.includes(symbol) && isNaN(Number(symbol))) {
+                                symbols.add(symbol);
+                                
+                                // Try to get the sector code from the column first!
+                                let sectorText = currentGroupHeader;
+                                if (secCol !== -1 && cells.length > secCol) {
+                                    const colText = cells[secCol].textContent?.trim();
+                                    if (colText) sectorText = colText;
+                                }
+
+                                // Map it using your dictionary
+                                sectorsMap[symbol] = SECTOR_CODE_MAP[sectorText.toUpperCase()] || sectorText;
+                            }
+                        }
+                    });
+                });
+            }
+        } catch (e) {}
+    }
+
+    return { symbols: Array.from(symbols).sort(), sectors: sectorsMap };
 };
