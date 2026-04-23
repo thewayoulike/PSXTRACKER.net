@@ -3,7 +3,11 @@ import sqlite3pkg from 'sqlite3';
 import bodyParser from 'body-parser';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import cloudscraper from 'cloudscraper';
+import { createRequire } from 'module'; // <-- IMPORT THIS
+
+// --- PROPERLY LOAD CLOUDSCRAPER ---
+const require = createRequire(import.meta.url);
+const cloudscraper = require('cloudscraper');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
