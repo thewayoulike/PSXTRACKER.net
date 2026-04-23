@@ -27,7 +27,19 @@ import { useIdleTimer } from '../hooks/useIdleTimer';
 import { ThemeToggle } from './ui/ThemeToggle'; 
 import * as Popover from '@radix-ui/react-popover'; 
 
-import { initDriveAuth, signInWithDrive, signOutDrive, saveToDrive, loadFromDrive, syncTransactionsToSheet, getGoogleSheetId, DriveUser, hasValidSession } from '../services/driveStorage';
+// Import updated drive storage with VPS logic
+import { 
+    initDriveAuth, 
+    signInWithDrive, 
+    signOutDrive, 
+    saveToDrive, 
+    loadFromDrive, 
+    syncTransactionsToSheet, 
+    getGoogleSheetId, 
+    DriveUser, 
+    hasValidSession,
+    deleteUserData // New function added for privacy compliance
+} from '../services/driveStorage';
 import { calculateXIRR } from '../utils/finance';
 
 const INITIAL_TRANSACTIONS: Partial<Transaction>[] = [];
@@ -200,6 +212,22 @@ const App: React.FC = () => {
   });
 
   const handleManualLogout = () => { if (window.confirm("Logout and clear local data?")) { performLogout(); } };
+  
+  // Privacy Action: Permanently delete data from VPS
+  const handleWipeData = async () => {
+      if (!driveUser) return;
+      const confirmed = window.confirm("⚠️ DANGER: This will permanently delete ALL your portfolio data and history from our servers. This cannot be undone. Proceed?");
+      if (confirmed) {
+          const success = await deleteUserData(driveUser.email);
+          if (success) {
+              alert("Your account data has been completely wiped.");
+              performLogout();
+          } else {
+              alert("Failed to wipe data. Please try again later.");
+          }
+      }
+  };
+
   const handleLogin = () => signInWithDrive();
 
   useEffect(() => {
@@ -788,7 +816,10 @@ const App: React.FC = () => {
                      
                      <div className="flex items-center gap-3 pr-2">
                          {isCloudSyncing ? ( <Loader2 size={18} className="text-emerald-500 animate-spin" /> ) : ( <Save size={18} className="text-emerald-500" /> )}
-                         <button onClick={handleManualLogout} className="text-slate-400 hover:text-rose-500 transition-colors" title="Sign Out"> <LogOut size={18} /> </button>
+                         <div className="flex flex-col gap-1">
+                             <button onClick={handleManualLogout} className="text-slate-400 hover:text-rose-500 transition-colors" title="Sign Out"> <LogOut size={18} /> </button>
+                             <button onClick={handleWipeData} className="text-[10px] text-rose-500 font-bold hover:underline" title="Permanently delete data">Wipe Data</button>
+                         </div>
                      </div>
                  </div>
              ) : (
@@ -829,12 +860,10 @@ const App: React.FC = () => {
                         <ChartCandlestick size={16} className="sm:w-[18px] sm:h-[18px]" /> Stocks 
                     </button>
 
-                    {/* NEW: FAIR VALUE CALCULATOR TAB */}
                     <button onClick={() => setCurrentView('CALCULATOR')} className={`flex items-center gap-2 px-3 sm:px-6 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${currentView === 'CALCULATOR' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'}`}> 
                         <Calculator size={16} className="sm:w-[18px] sm:h-[18px]" /> Fair Value
                     </button>
 
-                    {/* EXISTING: TRADING SIMULATOR TAB */}
                     <button onClick={() => setCurrentView('SIMULATOR')} className={`flex items-center gap-2 px-3 sm:px-6 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${currentView === 'SIMULATOR' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'}`}> 
                         <TrendingUp size={16} className="sm:w-[18px] sm:h-[18px]" /> Simulator
                     </button>
@@ -1033,14 +1062,12 @@ const App: React.FC = () => {
                 </div>
             )}
 
-            {/* NEW RENDER BLOCK FOR FAIR VALUE CALCULATOR */}
             {currentView === 'CALCULATOR' && (
                 <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
                     <FairValueCalculator />
                 </div>
             )}
 
-            {/* EXISTING RENDER BLOCK FOR TRADING SIMULATOR */}
             {currentView === 'SIMULATOR' && (
                 <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
                     <TradingSimulator 
