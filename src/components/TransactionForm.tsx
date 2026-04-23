@@ -21,7 +21,7 @@ interface TransactionFormProps {
   freeCash?: number;
   savedScannedTrades?: EditableTrade[];
   onSaveScannedTrades?: (trades: EditableTrade[]) => void;
-  allSymbols?: string[]; // Added allSymbols prop
+  allSymbols?: string[]; // Receive symbols
 }
 
 const normalizeDate = (input: any): string => {
@@ -100,6 +100,14 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // THE MISSING FUNCTION FIX IS RIGHT HERE
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files.length > 0) {
+          setSelectedFile(e.target.files[0]);
+          setScanError(null);
+      }
+  };
 
   const updateScannedTrades = (trades: EditableTrade[]) => {
       if (onSaveScannedTrades) onSaveScannedTrades(trades);
