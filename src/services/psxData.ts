@@ -278,11 +278,12 @@ export const fetchAllPSXSymbols = async (): Promise<{ symbols: string[], sectors
             rows.forEach((row, rIdx) => {
                 if (rIdx === 0) return; // Skip headers
 
-                const cols = row.querySelectorAll("td");
+                // FIX: Look at both th and td. PSX sometimes uses th for sector headers!
+                const cells = row.querySelectorAll("td, th");
                 
                 // Identify Sector Group Headers
-                if (cols.length === 1 || (cols.length > 0 && cols.length < 4)) {
-                    let text = cols[0]?.textContent?.trim() || "";
+                if (cells.length === 1 || (cells.length > 0 && cells.length < 4)) {
+                    let text = cells[0]?.textContent?.trim() || "";
                     text = text.replace(/[\n\r\t]/g, '').trim();
                     if (text && text.length > 2 && !TICKER_BLACKLIST.includes(text.toUpperCase())) {
                         currentGroupHeader = text;
@@ -290,9 +291,9 @@ export const fetchAllPSXSymbols = async (): Promise<{ symbols: string[], sectors
                     return;
                 }
 
-                if (cols.length < 2) return;
+                if (cells.length < 2) return;
 
-                const symCell = cols[0];
+                const symCell = cells[0];
                 let symbol = symCell.querySelector('a')?.textContent?.trim().toUpperCase() || symCell.textContent?.trim().toUpperCase();
 
                 if (symbol) {
