@@ -235,60 +235,113 @@ const parseMarketWatchTable = (html: string, results: Record<string, any>, targe
     } catch (e) { }
 };
 
-// --- NEW FUNCTION USING YOUR PRIVATE PROXY ---
+// --- NEW FUNCTION TO GET ALL SYMBOLS AND THEIR SECTORS SIMULTANEOUSLY ---
 export const fetchAllPSXSymbols = async (): Promise<{ symbols: string[], sectors: Record<string, string> }> => {
-    const targetUrl = `https://dps.psx.com.pk/market-watch`;
-    const html = await fetchUrlWithFallback(targetUrl);
-
-    if (!html || html.length < 500) return { symbols: [], sectors: {} };
-
     const symbols = new Set<string>();
     const sectorsMap: Record<string, string> = {};
-    
+
+    // 1. ATTEMPT TO SCRAPE THE DEFINITIVE LISTINGS PAGE (Contains ALL stocks, even illiquid ones)
     try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, "text/html");
-        const tables = doc.querySelectorAll("table");
+        const listingsUrl = `https://dps.psx.com.pk/listings`;
+        const listingsHtml = await fetchUrlWithFallback(listingsUrl);
 
-        tables.forEach(table => {
-            const rows = table.querySelectorAll("tr");
-            let currentGroupHeader = "Unknown Sector";
+        if (listingsHtml && listingsHtml.length > 500) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(listingsHtml, "text/html");
+            
+            // PSX Listings layout: Column 0 = Symbol, Column 2 = Sector
+            const tables = doc.querySelectorAll("table");
 
-            rows.forEach((row, rIdx) => {
-                if (rIdx === 0) return; 
+            tables.forEach(table => {
+                const rows = table.querySelectorAll("tr");
+                let symCol = 0; 
+                let secCol = 2; 
 
-                const cells = row.querySelectorAll("td, th");
-                
-                // Identify Sector Group Headers
-                if (cells.length === 1 || (cells.length > 0 && cells.length < 4)) {
-                    let text = cells[0]?.textContent?.trim() || "";
-                    text = text.replace(/[\n\r\t]/g, '').trim();
-                    if (text && text.length > 2 && !TICKER_BLACKLIST.includes(text.toUpperCase())) {
-                        currentGroupHeader = text;
-                    }
-                    return;
+                // Dynamic header detection just in case PSX changes the column order
+                if (rows.length > 0) {
+                    const headers = rows[0].querySelectorAll("th, td");
+                    headers.forEach((h, idx) => {
+                        const txt = h.textContent?.trim().toUpperCase() || "";
+                        if (txt === 'SYMBOL') symCol = idx;
+                        if (txt === 'SECTOR') secCol = idx;
+                    });
                 }
 
-                if (cells.length < 2) return;
+                rows.forEach((row, rIdx) => {
+                    if (rIdx === 0) return; // Skip headers
+                    const cols = row.querySelectorAll("td");
+                    if (cols.length <= Math.max(symCol, secCol)) return;
 
-                const symCell = cells[0];
-                let symbol = symCell.querySelector('a')?.textContent?.trim().toUpperCase() || symCell.textContent?.trim().toUpperCase();
-
-                if (symbol) {
-                    symbol = symbol.split(/[\s-]/)[0];
-                    if (symbol.length >= 2 && symbol.length <= 8 && !TICKER_BLACKLIST.includes(symbol) && isNaN(Number(symbol))) {
-                        symbols.add(symbol);
-                        sectorsMap[symbol] = SECTOR_CODE_MAP[currentGroupHeader] || currentGroupHeader;
+                    let symbol = cols[symCol].textContent?.trim().toUpperCase() || "";
+                    let sector = cols[secCol].textContent?.trim() || "";
+                    
+                    if (symbol) {
+                        symbol = symbol.split(/[\s-]/)[0]; // Clean up things like "OGDC (Right)"
+                        if (symbol.length >= 2 && symbol.length <= 8 && !TICKER_BLACKLIST.includes(symbol) && isNaN(Number(symbol))) {
+                            symbols.add(symbol);
+                            if (sector) {
+                                // Save the official sector
+                                sectorsMap[symbol] = SECTOR_CODE_MAP[sector.toUpperCase()] || sector;
+                            }
+                        }
                     }
-                }
+                });
             });
-        });
-
-        return { 
-            symbols: Array.from(symbols).sort(), 
-            sectors: sectorsMap 
-        };
+        }
     } catch (e) {
-        return { symbols: [], sectors: {} };
+        console.error("Failed to parse listings page", e);
     }
+
+    // 2. FALLBACK: SCRAPE MARKET WATCH (Just in case the listings page is down)
+    if (symbols.size === 0) {
+        try {
+            const targetUrl = `https://dps.psx.com.pk/market-watch`;
+            const html = await fetchUrlWithFallback(targetUrl);
+
+            if (html && html.length > 500) {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, "text/html");
+                const tables = doc.querySelectorAll("table");
+
+                tables.forEach(table => {
+                    const rows = table.querySelectorAll("tr");
+                    let currentGroupHeader = "Unknown Sector";
+
+                    rows.forEach((row, rIdx) => {
+                        if (rIdx === 0) return; 
+
+                        const cells = row.querySelectorAll("td, th");
+                        if (cells.length === 1 || (cells.length > 0 && cells.length < 4)) {
+                            let text = cells[0]?.textContent?.trim() || "";
+                            text = text.replace(/[\n\r\t]/g, '').trim();
+                            if (text && text.length > 2 && !TICKER_BLACKLIST.includes(text.toUpperCase())) {
+                                currentGroupHeader = text;
+                            }
+                            return;
+                        }
+
+                        if (cells.length < 2) return;
+
+                        const symCell = cells[0];
+                        let symbol = symCell.querySelector('a')?.textContent?.trim().toUpperCase() || symCell.textContent?.trim().toUpperCase();
+
+                        if (symbol) {
+                            symbol = symbol.split(/[\s-]/)[0];
+                            if (symbol.length >= 2 && symbol.length <= 8 && !TICKER_BLACKLIST.includes(symbol) && isNaN(Number(symbol))) {
+                                symbols.add(symbol);
+                                sectorsMap[symbol] = SECTOR_CODE_MAP[currentGroupHeader] || currentGroupHeader;
+                            }
+                        }
+                    });
+                });
+            }
+        } catch (e) {
+            console.error("Failed to parse market watch", e);
+        }
+    }
+
+    return { 
+        symbols: Array.from(symbols).sort(), 
+        sectors: sectorsMap 
+    };
 };
