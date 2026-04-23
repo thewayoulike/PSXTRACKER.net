@@ -1,30 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Transaction } from '../types';
 import { 
-  Search, 
-  ChevronDown, 
-  Wallet, 
-  Coins, 
-  Receipt, 
-  History, 
-  XCircle, 
-  BarChart3,
-  ChevronLeft,
-  ChevronRight,
-  Percent,
-  CalendarCheck,
-  Download,
-  PieChart,
-  Target,
-  Layers,     
-  LayoutList, 
-  TrendingUp, 
-  Activity,
-  Loader2,
-  FileText,
-  RefreshCw,
-  Clock,
-  AlertCircle
+  Search, ChevronDown, Wallet, Coins, Receipt, History, XCircle, BarChart3,
+  ChevronLeft, ChevronRight, Percent, CalendarCheck, Download, PieChart, Target,
+  Layers, LayoutList, TrendingUp, Activity, Loader2, FileText, RefreshCw, Clock, AlertCircle
 } from 'lucide-react';
 import { Card } from './ui/Card';
 import { exportToCSV } from '../utils/export';
@@ -35,6 +14,7 @@ interface TickerPerformanceListProps {
   currentPrices: Record<string, number>;
   sectors: Record<string, string>;
   onTickerClick: (ticker: string) => void;
+  allSymbols?: string[];
 }
 
 interface ActivityRow extends Transaction {
@@ -46,70 +26,23 @@ interface ActivityRow extends Transaction {
 }
 
 interface SectorStats {
-    name: string;
-    stockCount: number;
-    totalCostBasis: number;
-    currentValue: number;
-    realizedPL: number;
-    unrealizedPL: number;
-    totalDividends: number;
-    netDividends: number;
-    dividendTax: number;
-    lifetimeNet: number;
-    lifetimeROI: number;
-    allocationPercent: number;
-    feesPaid: number;
-    totalComm: number;
-    totalTradingTax: number;
-    totalCDC: number;
-    totalOther: number;
-    tradeCount: number;
-    buyCount: number;
-    sellCount: number;
-    dividendYieldOnCost: number;
-    ownedQty: number;
-    soldQty: number;
-    dividendCount: number;
-    tickers: string[];
+    name: string; stockCount: number; totalCostBasis: number; currentValue: number; realizedPL: number; unrealizedPL: number; totalDividends: number; netDividends: number; dividendTax: number; lifetimeNet: number; lifetimeROI: number; allocationPercent: number; feesPaid: number; totalComm: number; totalTradingTax: number; totalCDC: number; totalOther: number; tradeCount: number; buyCount: number; sellCount: number; dividendYieldOnCost: number; ownedQty: number; soldQty: number; dividendCount: number; tickers: string[];
 }
 
 const getHoldingDuration = (dateStr: string) => {
-    const start = new Date(dateStr);
-    const now = new Date();
-    
-    let years = now.getFullYear() - start.getFullYear();
-    let months = now.getMonth() - start.getMonth();
-    let days = now.getDate() - start.getDate();
-
-    if (days < 0) {
-        months--;
-        const prevMonth = new Date(now.getFullYear(), now.getMonth(), 0);
-        days += prevMonth.getDate();
-    }
-    if (months < 0) {
-        years--;
-        months += 12;
-    }
-    
-    if (years > 0) return `${years}Y ${months}M`;
-    if (months > 0) return `${months}M ${days}D`;
-    return `${days} Days`;
+    const start = new Date(dateStr); const now = new Date();
+    let years = now.getFullYear() - start.getFullYear(); let months = now.getMonth() - start.getMonth(); let days = now.getDate() - start.getDate();
+    if (days < 0) { months--; const prevMonth = new Date(now.getFullYear(), now.getMonth(), 0); days += prevMonth.getDate(); }
+    if (months < 0) { years--; months += 12; }
+    if (years > 0) return `${years}Y ${months}M`; if (months > 0) return `${months}M ${days}D`; return `${days} Days`;
 };
 
 export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({ 
-  transactions, currentPrices, sectors, onTickerClick
+  transactions, currentPrices, sectors, onTickerClick, allSymbols = []
 }) => {
-  const [analysisMode, setAnalysisMode] = useState<'STOCK' | 'SECTOR'>(() => {
-      return (localStorage.getItem('psx_analyzer_mode') as 'STOCK' | 'SECTOR') || 'STOCK';
-  });
-
-  const [selectedTicker, setSelectedTicker] = useState<string | null>(() => {
-      return localStorage.getItem('psx_last_analyzed_ticker') || null;
-  });
-
-  const [selectedSector, setSelectedSector] = useState<string | null>(() => {
-      return localStorage.getItem('psx_last_analyzed_sector') || null;
-  });
+  const [analysisMode, setAnalysisMode] = useState<'STOCK' | 'SECTOR'>(() => (localStorage.getItem('psx_analyzer_mode') as 'STOCK' | 'SECTOR') || 'STOCK');
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(() => localStorage.getItem('psx_last_analyzed_ticker') || null);
+  const [selectedSector, setSelectedSector] = useState<string | null>(() => localStorage.getItem('psx_last_analyzed_sector') || null);
   
   const [searchTerm, setSearchTerm] = useState(() => {
       const mode = localStorage.getItem('psx_analyzer_mode') as 'STOCK' | 'SECTOR';
@@ -119,7 +52,6 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-
   const [activityPage, setActivityPage] = useState<number>(1);
   const [activityRowsPerPage, setActivityRowsPerPage] = useState<number>(25);
 
@@ -129,50 +61,30 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
 
   const loadFundamentals = useCallback(async () => {
       if (analysisMode === 'STOCK' && selectedTicker) {
-          setLoadingFundamentals(true);
-          setFundamentals(null); 
-          try {
-              const data = await fetchCompanyFundamentals(selectedTicker);
-              setFundamentals(data);
-          } catch (err) {
-              console.error("Failed to fetch fundamentals", err);
-          } finally {
-              setLoadingFundamentals(false);
-          }
-      } else {
-          setFundamentals(null);
-      }
+          setLoadingFundamentals(true); setFundamentals(null); 
+          try { const data = await fetchCompanyFundamentals(selectedTicker); setFundamentals(data); } 
+          catch (err) { console.error("Failed to fetch fundamentals", err); } 
+          finally { setLoadingFundamentals(false); }
+      } else { setFundamentals(null); }
   }, [selectedTicker, analysisMode]);
 
-  useEffect(() => {
-      loadFundamentals();
-  }, [loadFundamentals]);
+  useEffect(() => { loadFundamentals(); }, [loadFundamentals]);
 
   const totalPortfolioValue = useMemo(() => {
       const uniqueTickers = Array.from(new Set(transactions.map(t => t.ticker)));
       const systemTypes = ['DEPOSIT', 'WITHDRAWAL', 'ANNUAL_FEE', 'TAX', 'HISTORY', 'OTHER'];
-      
       return uniqueTickers.reduce((total, tkr) => {
           if (['CASH', 'CGT'].includes(tkr)) return total;
           const txs = transactions.filter(t => t.ticker === tkr && !systemTypes.includes(t.type));
-          const netQty = txs.reduce((acc, t) => {
-              if (t.type === 'BUY') return acc + t.quantity;
-              if (t.type === 'SELL') return acc - t.quantity;
-              return acc;
-          }, 0);
+          const netQty = txs.reduce((acc, t) => { if (t.type === 'BUY') return acc + t.quantity; if (t.type === 'SELL') return acc - t.quantity; return acc; }, 0);
           if (netQty > 0) return total + (netQty * (currentPrices[tkr] || 0));
           return total;
       }, 0);
   }, [transactions, currentPrices]);
 
-  // --- REVISED LOGIC: Intraday Priority, then FIFO ---
   const calculateEnrichedRows = (ticker: string, txs: Transaction[]): ActivityRow[] => {
       const txsByDate: Record<string, Transaction[]> = {};
-      txs.forEach(t => {
-          if (!txsByDate[t.date]) txsByDate[t.date] = [];
-          txsByDate[t.date].push(t);
-      });
-
+      txs.forEach(t => { if (!txsByDate[t.date]) txsByDate[t.date] = []; txsByDate[t.date].push(t); });
       const sortedDates = Object.keys(txsByDate).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
       const mainLots: { id: string, quantity: number, costPerShare: number }[] = [];
       const buyRemainingMap: Record<string, number> = {};
@@ -198,24 +110,11 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
               if (dayBuyLots.length > 0) {
                   for (const buyLot of dayBuyLots) {
                       if (qtyToFill <= 0.0001) break;
-                      if (buyLot.quantity > 0) {
-                          const matched = Math.min(qtyToFill, buyLot.quantity);
-                          totalCostBasis += matched * buyLot.costPerShare;
-                          buyLot.quantity -= matched;
-                          qtyToFill -= matched;
-                          buyRemainingMap[buyLot.id] = buyLot.quantity; 
-                      }
+                      if (buyLot.quantity > 0) { const matched = Math.min(qtyToFill, buyLot.quantity); totalCostBasis += matched * buyLot.costPerShare; buyLot.quantity -= matched; qtyToFill -= matched; buyRemainingMap[buyLot.id] = buyLot.quantity; }
                   }
               }
-
               while (qtyToFill > 0.0001 && mainLots.length > 0) {
-                  const historyLot = mainLots[0];
-                  const matched = Math.min(qtyToFill, historyLot.quantity);
-                  totalCostBasis += matched * historyLot.costPerShare;
-                  historyLot.quantity -= matched;
-                  qtyToFill -= matched;
-                  buyRemainingMap[historyLot.id] = historyLot.quantity;
-                  if (historyLot.quantity < 0.0001) mainLots.shift();
+                  const historyLot = mainLots[0]; const matched = Math.min(qtyToFill, historyLot.quantity); totalCostBasis += matched * historyLot.costPerShare; historyLot.quantity -= matched; qtyToFill -= matched; buyRemainingMap[historyLot.id] = historyLot.quantity; if (historyLot.quantity < 0.0001) mainLots.shift();
               }
 
               const filledQty = sellTx.quantity - qtyToFill;
@@ -225,46 +124,23 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
           });
 
           dayBuyLots.forEach(lot => {
-              if (lot.quantity > 0.0001) {
-                  mainLots.push({ id: lot.id, quantity: lot.quantity, costPerShare: lot.costPerShare });
-                  buyRemainingMap[lot.id] = lot.quantity;
-              } else if (buyRemainingMap[lot.id] === undefined) {
-                  buyRemainingMap[lot.id] = 0; 
-              }
+              if (lot.quantity > 0.0001) { mainLots.push({ id: lot.id, quantity: lot.quantity, costPerShare: lot.costPerShare }); buyRemainingMap[lot.id] = lot.quantity; } 
+              else if (buyRemainingMap[lot.id] === undefined) { buyRemainingMap[lot.id] = 0; }
           });
       });
 
       return txs.map(t => {
-          let avgBuyPrice = 0;
-          let sellOrCurrentPrice = 0;
-          let gain = 0;
-          let gainType: 'REALIZED' | 'UNREALIZED' | 'NONE' = 'NONE';
-          let remainingQty = 0;
+          let avgBuyPrice = 0; let sellOrCurrentPrice = 0; let gain = 0; let gainType: 'REALIZED' | 'UNREALIZED' | 'NONE' = 'NONE'; let remainingQty = 0;
           const currentPrice = currentPrices[ticker] || 0;
 
           if (t.type === 'BUY') {
               const fees = (t.commission || 0) + (t.tax || 0) + (t.cdcCharges || 0) + (t.otherFees || 0);
-              avgBuyPrice = ((t.quantity * t.price) + fees) / t.quantity;
-              sellOrCurrentPrice = currentPrice;
-              remainingQty = buyRemainingMap[t.id] !== undefined ? buyRemainingMap[t.id] : t.quantity;
-              if (remainingQty > 0.0001) {
-                  gain = (sellOrCurrentPrice - avgBuyPrice) * remainingQty;
-                  gainType = 'UNREALIZED';
-              }
+              avgBuyPrice = ((t.quantity * t.price) + fees) / t.quantity; sellOrCurrentPrice = currentPrice; remainingQty = buyRemainingMap[t.id] !== undefined ? buyRemainingMap[t.id] : t.quantity;
+              if (remainingQty > 0.0001) { gain = (sellOrCurrentPrice - avgBuyPrice) * remainingQty; gainType = 'UNREALIZED'; }
           } else if (t.type === 'SELL') {
               const analysis = sellAnalysisMap[t.id];
-              if (analysis) {
-                  avgBuyPrice = analysis.avgBuy;
-                  const fees = (t.commission || 0) + (t.tax || 0) + (t.cdcCharges || 0) + (t.otherFees || 0);
-                  sellOrCurrentPrice = ((t.quantity * t.price) - fees) / t.quantity;
-                  gain = analysis.gain;
-                  gainType = analysis.gainType;
-              }
-          } else if (t.type === 'DIVIDEND') {
-               sellOrCurrentPrice = t.price;
-               gain = (t.quantity * t.price) - (t.tax || 0);
-               gainType = 'NONE';
-          }
+              if (analysis) { avgBuyPrice = analysis.avgBuy; const fees = (t.commission || 0) + (t.tax || 0) + (t.cdcCharges || 0) + (t.otherFees || 0); sellOrCurrentPrice = ((t.quantity * t.price) - fees) / t.quantity; gain = analysis.gain; gainType = analysis.gainType; }
+          } else if (t.type === 'DIVIDEND') { sellOrCurrentPrice = t.price; gain = (t.quantity * t.price) - (t.tax || 0); gainType = 'NONE'; }
           return { ...t, avgBuyPrice, sellOrCurrentPrice, gain, gainType, remainingQty };
       }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   };
@@ -272,24 +148,16 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
   const allTickerStats = useMemo(() => {
       const SYSTEM_TYPES = ['DEPOSIT', 'WITHDRAWAL', 'ANNUAL_FEE', 'TAX', 'HISTORY', 'OTHER'];
       const SYSTEM_TICKERS = ['CASH', 'ANNUAL FEE', 'CGT', 'PREV-PNL', 'ADJUSTMENT', 'OTHER FEE'];
-
-      const uniqueTickers = Array.from(new Set(
-          transactions
-            .filter(t => !SYSTEM_TYPES.includes(t.type))
-            .map(t => t.ticker)
-            .filter(t => !SYSTEM_TICKERS.includes(t))
-      ));
+      const uniqueTickers = Array.from(new Set(transactions.filter(t => !SYSTEM_TYPES.includes(t.type)).map(t => t.ticker).filter(t => !SYSTEM_TICKERS.includes(t))));
       
       return uniqueTickers.map(ticker => {
           const txs = transactions.filter(t => t.ticker === ticker);
           const enrichedRows = calculateEnrichedRows(ticker, txs); 
-          
           let ownedQty = 0; let soldQty = 0; let realizedPL = 0; let unrealizedPL = 0;
           let totalDividends = 0; let dividendTax = 0; let dividendCount = 0; let dividendSharesCount = 0;
           let totalComm = 0; let totalTradingTax = 0; let totalCDC = 0; let totalOther = 0;
           let tradeCount = 0; let buyCount = 0; let sellCount = 0; let lifetimeBuyCost = 0;
-          let totalCostBasis = 0; 
-          let totalHeldFees = 0; 
+          let totalCostBasis = 0; let totalHeldFees = 0; 
 
           const activeBuys = enrichedRows.filter(r => r.type === 'BUY' && (r.remainingQty || 0) > 0);
           const oldestBuyDate = activeBuys.length > 0 ? activeBuys[activeBuys.length - 1].date : null;
@@ -299,64 +167,23 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
               if (row.type === 'BUY') {
                   lifetimeBuyCost += (row.quantity * row.avgBuyPrice); 
                   if (row.gainType === 'UNREALIZED') unrealizedPL += row.gain;
-                  
-                  if ((row.remainingQty || 0) > 0) {
-                      totalCostBasis += (row.remainingQty || 0) * row.avgBuyPrice;
-                      const feePerShare = row.avgBuyPrice - row.price;
-                      totalHeldFees += (row.remainingQty || 0) * feePerShare;
-                  }
-
-                  tradeCount++; buyCount++;
-                  totalComm += row.commission || 0; 
-                  totalTradingTax += row.tax || 0; 
-                  totalCDC += row.cdcCharges || 0; 
-                  totalOther += row.otherFees || 0;
-              } else if (row.type === 'SELL') {
-                  soldQty += row.quantity;
-                  if (row.gainType === 'REALIZED') realizedPL += row.gain;
-                  tradeCount++; sellCount++;
-                  totalComm += row.commission || 0; totalTradingTax += row.tax || 0; totalCDC += row.cdcCharges || 0; totalOther += row.otherFees || 0;
-              } else if (row.type === 'DIVIDEND') {
-                  totalDividends += (row.quantity * row.price);
-                  dividendTax += (row.tax || 0);
-                  dividendCount++;
-                  dividendSharesCount += row.quantity;
-              }
+                  if ((row.remainingQty || 0) > 0) { totalCostBasis += (row.remainingQty || 0) * row.avgBuyPrice; const feePerShare = row.avgBuyPrice - row.price; totalHeldFees += (row.remainingQty || 0) * feePerShare; }
+                  tradeCount++; buyCount++; totalComm += row.commission || 0; totalTradingTax += row.tax || 0; totalCDC += row.cdcCharges || 0; totalOther += row.otherFees || 0;
+              } else if (row.type === 'SELL') { soldQty += row.quantity; if (row.gainType === 'REALIZED') realizedPL += row.gain; tradeCount++; sellCount++; totalComm += row.commission || 0; totalTradingTax += row.tax || 0; totalCDC += row.cdcCharges || 0; totalOther += row.otherFees || 0;
+              } else if (row.type === 'DIVIDEND') { totalDividends += (row.quantity * row.price); dividendTax += (row.tax || 0); dividendCount++; dividendSharesCount += row.quantity; }
           });
 
           ownedQty = enrichedRows.filter(r => r.type === 'BUY').reduce((acc, r) => acc + (r.remainingQty || 0), 0);
-          const currentPrice = currentPrices[ticker] || 0;
-          const currentValue = ownedQty * currentPrice;
-          const currentAvgPrice = ownedQty > 0 ? totalCostBasis / ownedQty : 0;
+          const currentPrice = currentPrices[ticker] || 0; const currentValue = ownedQty * currentPrice; const currentAvgPrice = ownedQty > 0 ? totalCostBasis / ownedQty : 0;
           const totalNetReturn = realizedPL + unrealizedPL + (totalDividends - dividendTax);
           const lifetimeROI = lifetimeBuyCost > 0 ? (totalNetReturn / lifetimeBuyCost) * 100 : 0;
           const feesPaid = totalComm + totalTradingTax + totalCDC + totalOther;
           const allocationPercent = totalPortfolioValue > 0 ? (currentValue / totalPortfolioValue) * 100 : 0;
-          
-          let breakEvenPrice = 0;
-          if (ownedQty > 0) {
-              const avgBuyFeePerShare = totalHeldFees / ownedQty;
-              breakEvenPrice = currentAvgPrice + avgBuyFeePerShare;
-          }
-
+          let breakEvenPrice = 0; if (ownedQty > 0) { const avgBuyFeePerShare = totalHeldFees / ownedQty; breakEvenPrice = currentAvgPrice + avgBuyFeePerShare; }
           const dividendYieldOnCost = lifetimeBuyCost > 0 ? (totalDividends / lifetimeBuyCost) * 100 : 0;
           const avgDPS = dividendSharesCount > 0 ? totalDividends / dividendSharesCount : 0;
 
-          return {
-              ticker,
-              sector: sectors[ticker] || 'Unknown',
-              status: ownedQty > 0.01 ? 'Active' : 'Closed',
-              ownedQty, soldQty, currentPrice, currentAvgPrice, currentValue,
-              totalCostBasis, 
-              realizedPL, unrealizedPL, totalNetReturn,
-              totalDividends, dividendTax, netDividends: totalDividends - dividendTax,
-              dividendCount, dividendSharesCount, dividendYieldOnCost, avgDPS,
-              feesPaid, totalComm, totalTradingTax, totalCDC, totalOther,
-              tradeCount, buyCount, sellCount,
-              lifetimeROI, allocationPercent, breakEvenPrice,
-              lifetimeBuyCost,
-              holdingPeriod
-          };
+          return { ticker, sector: sectors[ticker] || 'Unknown', status: ownedQty > 0.01 ? 'Active' : 'Closed', ownedQty, soldQty, currentPrice, currentAvgPrice, currentValue, totalCostBasis, realizedPL, unrealizedPL, totalNetReturn, totalDividends, dividendTax, netDividends: totalDividends - dividendTax, dividendCount, dividendSharesCount, dividendYieldOnCost, avgDPS, feesPaid, totalComm, totalTradingTax, totalCDC, totalOther, tradeCount, buyCount, sellCount, lifetimeROI, allocationPercent, breakEvenPrice, lifetimeBuyCost, holdingPeriod };
       }).sort((a, b) => a.ticker.localeCompare(b.ticker));
   }, [transactions, currentPrices, sectors, totalPortfolioValue]);
 
@@ -364,11 +191,7 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
       const sectorMap: Record<string, SectorStats> = {};
       allTickerStats.forEach(stat => {
           const secName = stat.sector;
-          if (!sectorMap[secName]) {
-              sectorMap[secName] = {
-                  name: secName, stockCount: 0, totalCostBasis: 0, currentValue: 0, realizedPL: 0, unrealizedPL: 0, totalDividends: 0, netDividends: 0, dividendTax: 0, lifetimeNet: 0, lifetimeROI: 0, allocationPercent: 0, feesPaid: 0, totalComm: 0, totalTradingTax: 0, totalCDC: 0, totalOther: 0, tradeCount: 0, buyCount: 0, sellCount: 0, dividendYieldOnCost: 0, ownedQty: 0, soldQty: 0, dividendCount: 0, tickers: []
-              };
-          }
+          if (!sectorMap[secName]) { sectorMap[secName] = { name: secName, stockCount: 0, totalCostBasis: 0, currentValue: 0, realizedPL: 0, unrealizedPL: 0, totalDividends: 0, netDividends: 0, dividendTax: 0, lifetimeNet: 0, lifetimeROI: 0, allocationPercent: 0, feesPaid: 0, totalComm: 0, totalTradingTax: 0, totalCDC: 0, totalOther: 0, tradeCount: 0, buyCount: 0, sellCount: 0, dividendYieldOnCost: 0, ownedQty: 0, soldQty: 0, dividendCount: 0, tickers: [] }; }
           const s = sectorMap[secName];
           s.stockCount++; s.totalCostBasis += stat.totalCostBasis; s.currentValue += stat.currentValue; s.realizedPL += stat.realizedPL; s.unrealizedPL += stat.unrealizedPL; s.totalDividends += stat.totalDividends; s.netDividends += stat.netDividends; s.dividendTax += stat.dividendTax; s.feesPaid += stat.feesPaid; s.totalComm += stat.totalComm; s.totalTradingTax += stat.totalTradingTax; s.totalCDC += stat.totalCDC; s.totalOther += stat.totalOther; s.tradeCount += stat.tradeCount; s.buyCount += stat.buyCount; s.sellCount += stat.sellCount; s.allocationPercent += stat.allocationPercent; s.lifetimeNet += stat.totalNetReturn; s.ownedQty += stat.ownedQty; s.soldQty += stat.soldQty; s.dividendCount += stat.dividendCount; s.tickers.push(stat.ticker);
       });
@@ -383,18 +206,54 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
 
   const filteredOptions = useMemo(() => {
       if (analysisMode === 'STOCK') {
-          if (!searchTerm) return allTickerStats;
-          return allTickerStats.filter(s => s.ticker.toLowerCase().includes(searchTerm.toLowerCase()));
+          let options: any[] = [];
+          if (!searchTerm) {
+              options = allTickerStats;
+          } else {
+              options = allTickerStats.filter(s => s.ticker.toLowerCase().includes(searchTerm.toLowerCase()));
+          }
+          
+          if (allSymbols && allSymbols.length > 0) {
+              const existing = new Set(allTickerStats.map(s => s.ticker));
+              let extra = allSymbols
+                  .filter(s => !existing.has(s))
+                  .map(s => ({
+                      ticker: s,
+                      sector: sectors[s] || 'Unknown',
+                      totalNetReturn: 0,
+                      isNotHeld: true
+                  }));
+              if (searchTerm) {
+                  extra = extra.filter(s => s.ticker.toLowerCase().includes(searchTerm.toLowerCase()));
+              }
+              options = [...options, ...extra];
+          }
+          return options.slice(0, 50);
       } else {
           if (!searchTerm) return allSectorStats;
           return allSectorStats.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()));
       }
-  }, [analysisMode, searchTerm, allTickerStats, allSectorStats]);
+  }, [analysisMode, searchTerm, allTickerStats, allSectorStats, allSymbols, sectors]);
 
   const selectedStockStats = useMemo(() => {
       if (analysisMode !== 'STOCK' || !selectedTicker) return null;
-      return allTickerStats.find(s => s.ticker === selectedTicker);
-  }, [selectedTicker, allTickerStats, analysisMode]);
+      const found = allTickerStats.find(s => s.ticker === selectedTicker);
+      if (found) return found;
+
+      return {
+          ticker: selectedTicker,
+          sector: sectors[selectedTicker] || 'Unknown',
+          status: 'Not Held',
+          ownedQty: 0, soldQty: 0, currentPrice: currentPrices[selectedTicker] || 0, currentAvgPrice: 0, currentValue: 0,
+          totalCostBasis: 0, realizedPL: 0, unrealizedPL: 0, totalNetReturn: 0,
+          totalDividends: 0, dividendTax: 0, netDividends: 0,
+          dividendCount: 0, dividendSharesCount: 0, dividendYieldOnCost: 0, avgDPS: 0,
+          feesPaid: 0, totalComm: 0, totalTradingTax: 0, totalCDC: 0, totalOther: 0,
+          tradeCount: 0, buyCount: 0, sellCount: 0,
+          lifetimeROI: 0, allocationPercent: 0, breakEvenPrice: 0,
+          lifetimeBuyCost: 0, holdingPeriod: '-'
+      };
+  }, [selectedTicker, allTickerStats, analysisMode, sectors, currentPrices]);
 
   const selectedSectorStats = useMemo(() => {
       if (analysisMode !== 'SECTOR' || !selectedSector) return null;
@@ -409,15 +268,10 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
   }, []);
 
   const switchToStockMode = (ticker?: string) => { 
-      setAnalysisMode('STOCK'); 
-      localStorage.setItem('psx_analyzer_mode', 'STOCK'); 
+      setAnalysisMode('STOCK'); localStorage.setItem('psx_analyzer_mode', 'STOCK'); 
       const targetTicker = ticker || localStorage.getItem('psx_last_analyzed_ticker') || '';
-      if (targetTicker) {
-          setSelectedTicker(targetTicker);
-          localStorage.setItem('psx_last_analyzed_ticker', targetTicker);
-      }
-      setSearchTerm(targetTicker); 
-      setIsDropdownOpen(false); 
+      if (targetTicker) { setSelectedTicker(targetTicker); localStorage.setItem('psx_last_analyzed_ticker', targetTicker); }
+      setSearchTerm(targetTicker); setIsDropdownOpen(false); 
   };
 
   const switchToSectorMode = () => { setAnalysisMode('SECTOR'); localStorage.setItem('psx_analyzer_mode', 'SECTOR'); const lastSector = localStorage.getItem('psx_last_analyzed_sector'); setSearchTerm(lastSector || ''); setIsDropdownOpen(false); };
@@ -436,9 +290,8 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
   const formatCurrency = (val: number) => val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const formatDecimal = (val: number) => val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Formatting Helpers for Positive/Negative/Zero distinction
   const getColorClass = (val: number) => {
-      if (Math.abs(val) < 0.01) return 'text-slate-500 dark:text-slate-400'; // Gray for Zero
+      if (Math.abs(val) < 0.01) return 'text-slate-500 dark:text-slate-400'; 
       return val > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400';
   };
 
@@ -452,8 +305,7 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
       return financialPeriod === 'Annual' ? fundamentals.annual : fundamentals.quarterly;
   }, [fundamentals, financialPeriod]);
 
-  const isSelectionNotFound = (analysisMode === 'STOCK' && selectedTicker && !selectedStockStats) || 
-                              (analysisMode === 'SECTOR' && selectedSector && !selectedSectorStats);
+  const isSelectionNotFound = (analysisMode === 'SECTOR' && selectedSector && !selectedSectorStats);
 
   return (
     <div className="max-w-7xl mx-auto mb-20 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -467,7 +319,7 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
               </h2>
               <p className="text-slate-500 dark:text-slate-400 text-sm">
                   {analysisMode === 'STOCK' 
-                      ? 'Select a company to view position details, realized gains, and activity.'
+                      ? 'Search any PSX company to view financials, charts, and your portfolio position.'
                       : 'Select a sector to view aggregated performance across multiple companies.'}
               </p>
           </div>
@@ -480,13 +332,13 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
           <div className="relative w-full max-w-md" ref={dropdownRef}>
               <div className="flex items-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 shadow-sm focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all cursor-text" onClick={() => setIsDropdownOpen(true)}>
                   <Search size={20} className="text-slate-400 mr-3" />
-                  <input type="text" className="flex-1 bg-transparent outline-none text-slate-800 dark:text-slate-200 font-bold placeholder:font-normal" placeholder={analysisMode === 'STOCK' ? "Search Ticker (e.g. PPL)..." : "Search Sector (e.g. Fertilizer)..."} value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value.toUpperCase()); setIsDropdownOpen(true); }} onFocus={() => setIsDropdownOpen(true)} />
+                  <input type="text" className="flex-1 bg-transparent outline-none text-slate-800 dark:text-slate-200 font-bold placeholder:font-normal" placeholder={analysisMode === 'STOCK' ? "Search any PSX Ticker..." : "Search Sector (e.g. Fertilizer)..."} value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value.toUpperCase()); setIsDropdownOpen(true); }} onFocus={() => setIsDropdownOpen(true)} />
                   {(selectedTicker || selectedSector) && ( <button onClick={handleClearSelection} className="p-1 hover:bg-slate-100 dark:bg-slate-700 rounded-full text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 mr-1"> <XCircle size={16} /> </button> )}
                   <ChevronDown size={18} className={`text-slate-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
               </div>
               {isDropdownOpen && (
-                  <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl z-50 max-h-[300px] overflow-y-auto custom-scrollbar p-2">
-                      {filteredOptions.length === 0 ? ( <div className="p-4 text-center text-slate-400 text-sm">No results found.</div> ) : ( filteredOptions.map((stats: any) => ( <div key={analysisMode === 'STOCK' ? stats.ticker : stats.name} onClick={() => handleSelect(analysisMode === 'STOCK' ? stats.ticker : stats.name)} className="flex items-center justify-between p-3 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl cursor-pointer group transition-colors"> <div className="flex items-center gap-3"> <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-xs font-black ${analysisMode === 'STOCK' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}> {analysisMode === 'STOCK' ? stats.ticker.substring(0, 2) : <Layers size={16} />} </div> <div className="text-left"> <div className="font-bold text-slate-800 dark:text-slate-200">{analysisMode === 'STOCK' ? stats.ticker : stats.name}</div> <div className="text-[10px] text-slate-400 uppercase font-medium"> {analysisMode === 'STOCK' ? stats.sector : `${stats.stockCount} Companies`} </div> </div> </div> <div className="text-right"> <div className={`font-bold text-sm ${getColorClass(analysisMode === 'STOCK' ? stats.totalNetReturn : stats.lifetimeNet)}`}> {formatGain(analysisMode === 'STOCK' ? stats.totalNetReturn : stats.lifetimeNet)} </div> </div> </div> )) )}
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl z-50 max-h-[300px] overflow-y-auto custom-scrollbar p-2 text-left">
+                      {filteredOptions.length === 0 ? ( <div className="p-4 text-center text-slate-400 text-sm">No results found.</div> ) : ( filteredOptions.map((stats: any) => ( <div key={analysisMode === 'STOCK' ? stats.ticker : stats.name} onClick={() => handleSelect(analysisMode === 'STOCK' ? stats.ticker : stats.name)} className="flex items-center justify-between p-3 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl cursor-pointer group transition-colors"> <div className="flex items-center gap-3"> <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-xs font-black ${analysisMode === 'STOCK' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}> {analysisMode === 'STOCK' ? stats.ticker.substring(0, 2) : <Layers size={16} />} </div> <div className="text-left"> <div className="font-bold text-slate-800 dark:text-slate-200">{analysisMode === 'STOCK' ? stats.ticker : stats.name}</div> <div className="text-[10px] text-slate-400 uppercase font-medium"> {analysisMode === 'STOCK' ? stats.sector : `${stats.stockCount} Companies`} </div> </div> </div> <div className="text-right"> <div className={`font-bold text-sm ${stats.isNotHeld ? 'text-slate-400 dark:text-slate-500' : getColorClass(analysisMode === 'STOCK' ? stats.totalNetReturn : stats.lifetimeNet)}`}> {stats.isNotHeld ? 'Not Held' : formatGain(analysisMode === 'STOCK' ? stats.totalNetReturn : stats.lifetimeNet)} </div> </div> </div> )) )}
                   </div>
               )}
           </div>
@@ -513,7 +365,8 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
                     {selectedStockStats.status === 'Active' && ( <> <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between"> <div className="flex items-center gap-3"> <div className="p-2 bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400 rounded-xl"><PieChart size={18} /></div> <div> <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Allocation</div> <div className="text-lg font-black text-slate-800 dark:text-slate-100">{selectedStockStats.allocationPercent.toFixed(1)}%</div> </div> </div> </div> <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between"> <div className="flex items-center gap-3"> <div className="p-2 bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 rounded-xl"><Target size={18} /></div> <div> <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Break-Even Price</div> <div className="text-lg font-black text-violet-600 dark:text-violet-400">Rs. {formatDecimal(selectedStockStats.breakEvenPrice)}</div> </div> </div> </div> </> )}
                 </div>
 
-                {/* 2. STATS GRID */}
+                {/* 2. STATS GRID (Only show if there are actual holdings/history) */}
+                {selectedStockStats.tradeCount > 0 && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <Card className="md:col-span-1">
                         <div className="flex items-center gap-2 mb-6"> <div className="p-2 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg"><Wallet size={18} /></div> <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Position & Gains</h3> </div>
@@ -569,6 +422,7 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
                         </div>
                     </Card>
                 </div>
+                )}
 
                 {/* --- COMPANY FINANCIALS --- */}
                 <div className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
@@ -809,7 +663,7 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
         )}
 
         {/* --- ACTIVITY TABLE (Shared for both Stock & Sector) --- */}
-        {(selectedTicker || selectedSector) && !isSelectionNotFound && (
+        {(selectedTicker || selectedSector) && !isSelectionNotFound && currentRows.length > 0 && (
             <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-3xl overflow-hidden shadow-sm mt-6">
                 <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-700/30">
                     <div className="flex items-center gap-2"> <History size={20} className="text-slate-500 dark:text-slate-400" /> <h3 className="font-bold text-slate-800 dark:text-slate-200">Activity Log</h3> </div>
@@ -867,14 +721,14 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
             </div>
         )}
 
-        {/* --- NEW: SELECTED BUT NOT FOUND STATE --- */}
+        {/* --- NEW: SELECTED BUT NOT FOUND STATE (For Sectors Only) --- */}
         {isSelectionNotFound && (
             <div className="flex flex-col items-center justify-center py-20 opacity-70 animate-in fade-in zoom-in-95"> 
                 <div className="w-24 h-24 bg-amber-50 dark:bg-amber-900/20 rounded-full flex items-center justify-center mb-4 text-amber-400 dark:text-amber-500"> 
                     <AlertCircle size={48} /> 
                 </div> 
                 <h3 className="text-xl font-bold text-slate-600 dark:text-slate-300">
-                    {analysisMode === 'STOCK' ? `Stock "${selectedTicker}" Not Found` : `Sector "${selectedSector}" Not Found`}
+                    Sector "{selectedSector}" Not Found
                 </h3> 
                 <p className="text-slate-400 dark:text-slate-500 max-w-md text-center mt-2 text-sm">
                     This selection exists in your history but is not present in the currently active portfolio or combined view. 
@@ -884,8 +738,8 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
                 <button 
                     onClick={() => {
                         setSearchTerm('');
-                        if (analysisMode === 'STOCK') { setSelectedTicker(null); localStorage.removeItem('psx_last_analyzed_ticker'); }
-                        else { setSelectedSector(null); localStorage.removeItem('psx_last_analyzed_sector'); }
+                        setSelectedSector(null); 
+                        localStorage.removeItem('psx_last_analyzed_sector');
                     }}
                     className="mt-6 px-6 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-sm font-bold transition-colors"
                 >
