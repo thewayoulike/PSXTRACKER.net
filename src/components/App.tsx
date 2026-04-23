@@ -19,6 +19,7 @@ import { MarketTicker } from './MarketTicker';
 import { TransferModal } from './TransferModal';
 import { TradingSimulator } from './TradingSimulator';
 import { FairValueCalculator } from './FairValueCalculator';
+import { PortfolioHistoryChart } from './PortfolioHistoryChart'; // <-- NEW CHART ADDED HERE
 import { getSector } from '../services/sectors';
 import { fetchBatchPSXPrices, setScrapingApiKey, setWebScrapingAIKey, fetchAllPSXSymbols } from '../services/psxData';
 import { setGeminiApiKey } from '../services/gemini';
@@ -168,7 +169,65 @@ const App: React.FC = () => {
   const handleTogglePortfolioSelection = (id: string) => { const newSet = new Set(combinedPortfolioIds); if (newSet.has(id)) { if (newSet.size > 1) newSet.delete(id); } else { newSet.add(id); } setCombinedPortfolioIds(newSet); };
   const handleSelectAllPortfolios = () => { setCombinedPortfolioIds(new Set(portfolios.map(p => p.id))); };
 
-  const handleSyncPrices = async () => { const uniqueTickers = Array.from(new Set(holdings.map(h => h.ticker))); if (uniqueTickers.length === 0) return; setIsSyncing(true); setPriceError(false); setFailedTickers(new Set()); try { const newResults = await fetchBatchPSXPrices(uniqueTickers); const failed = new Set<string>(); const validUpdates: Record<string, number> = {}; const ldcpUpdates: Record<string, number> = {}; const newSectors: Record<string, string> = {}; const now = new Date().toISOString(); const timestampUpdates: Record<string, string> = {}; uniqueTickers.forEach(ticker => { const data = newResults[ticker]; if (data && data.price > 0) { validUpdates[ticker] = data.price; timestampUpdates[ticker] = now; if (data.ldcp > 0) ldcpUpdates[ticker] = data.ldcp; if (data.sector && data.sector !== 'Unknown Sector') { newSectors[ticker] = data.sector; } } else { failed.add(ticker); } }); if (Object.keys(validUpdates).length > 0) { setManualPrices(prev => ({ ...prev, ...validUpdates })); setLdcpMap(prev => ({ ...prev, ...ldcpUpdates })); setPriceTimestamps(prev => ({ ...prev, ...timestampUpdates })); } if (Object.keys(newSectors).length > 0) { setSectorOverrides(prev => ({ ...prev, ...newSectors })); } if (failed.size > 0) { setFailedTickers(failed); setPriceError(true); } } catch (e) { console.error(e); setPriceError(true); } finally { setIsSyncing(false); } };
+  const handleSyncPrices = async (silent = false) => { 
+      const uniqueTickers = Array.from(new Set(holdings.map(h => h.ticker))); 
+      if (uniqueTickers.length === 0) return; 
+      if (!silent) { setIsSyncing(true); setPriceError(false); setFailedTickers(new Set()); }
+      try { 
+          const newResults = await fetchBatchPSXPrices(uniqueTickers); 
+          const failed = new Set<string>(); 
+          const validUpdates: Record<string, number> = {}; 
+          const ldcpUpdates: Record<string, number> = {}; 
+          const newSectors: Record<string, string> = {}; 
+          const now = new Date().toISOString(); 
+          const timestampUpdates: Record<string, string> = {}; 
+          
+          uniqueTickers.forEach(ticker => { 
+              const data = newResults[ticker]; 
+              if (data && data.price > 0) { 
+                  validUpdates[ticker] = data.price; 
+                  timestampUpdates[ticker] = now; 
+                  if (data.ldcp > 0) ldcpUpdates[ticker] = data.ldcp; 
+                  if (data.sector && data.sector !== 'Unknown Sector') { newSectors[ticker] = data.sector; } 
+              } else { 
+                  failed.add(ticker); 
+              } 
+          }); 
+          
+          if (Object.keys(validUpdates).length > 0) { 
+              setManualPrices(prev => ({ ...prev, ...validUpdates })); 
+              setLdcpMap(prev => ({ ...prev, ...ldcpUpdates })); 
+              setPriceTimestamps(prev => ({ ...prev, ...timestampUpdates })); 
+          } 
+          if (Object.keys(newSectors).length > 0) { 
+              setSectorOverrides(prev => ({ ...prev, ...newSectors })); 
+          } 
+          if (failed.size > 0 && !silent) { 
+              setFailedTickers(failed); setPriceError(true); 
+          } 
+      } catch (e) { 
+          console.error(e); 
+          if (!silent) setPriceError(true); 
+      } finally { 
+          if (!silent) setIsSyncing(false); 
+      } 
+  };
+
+  // --- NEW: AUTO-UPDATER FOR LIVE PRICES (Every 3 Minutes) ---
+  useEffect(() => {
+      const intervalId = setInterval(() => {
+          const now = new Date();
+          const hours = now.getHours(); // Assumes user's local time matches PSX (PKT)
+          
+          // Only auto-update between roughly 9 AM and 4 PM
+          if (hours >= 9 && hours <= 16 && holdings.length > 0) {
+              console.log("Auto-updating live market prices...");
+              handleSyncPrices(true); // Silent sync (no loading spinners)
+          }
+      }, 180000); // 3 minutes = 180,000 ms
+
+      return () => clearInterval(intervalId);
+  }, [holdings]); // Depend on holdings so it knows which tickers to fetch
 
   useEffect(() => { if (brokers.length === 0) return; const generateFees = () => { let newTransactions: Transaction[] = []; brokers.forEach(broker => { if (!broker.annualFee || !broker.feeStartDate || broker.annualFee <= 0) return; let nextDueDate = new Date(broker.feeStartDate); nextDueDate.setFullYear(nextDueDate.getFullYear() + 1); const today = new Date(); while (nextDueDate <= today) { const feeYear = nextDueDate.getFullYear(); const txId = `auto-fee-${broker.id}-${feeYear}`; const exists = transactions.some(t => t.id === txId); if (!exists) { const feeDateStr = nextDueDate.toISOString().split('T')[0]; const newTx: Transaction = { id: txId, portfolioId: currentPortfolioId, ticker: 'ANNUAL FEE', type: 'ANNUAL_FEE', quantity: 1, price: broker.annualFee, date: feeDateStr, broker: broker.name, brokerId: broker.id, commission: 0, tax: 0, cdcCharges: 0, otherFees: 0, notes: `Annual Broker Fee (${feeYear})` }; newTransactions.push(newTx); } nextDueDate.setFullYear(nextDueDate.getFullYear() + 1); } }); if (newTransactions.length > 0) { setTransactions(prev => [...prev, ...newTransactions]); } }; generateFees(); }, [brokers, currentPortfolioId]); 
   useEffect(() => { if (portfolios.length > 0 && !portfolios.find(p => p.id === currentPortfolioId)) { setCurrentPortfolioId(portfolios[0].id); } }, [portfolios, currentPortfolioId]);
@@ -475,7 +534,7 @@ const App: React.FC = () => {
                                 <>
                                     <button onClick={() => setShowPriceEditor(true)} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 px-4 py-3 rounded-xl font-medium shadow-sm transition-colors flex items-center gap-2 whitespace-nowrap shrink-0"> <Edit3 size={18} /> <span>Manual Prices</span> </button>
                                      <div className="flex items-center gap-2 shrink-0">
-                                        <button onClick={handleSyncPrices} disabled={isSyncing} className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-800/50 text-emerald-700 dark:text-emerald-400 px-4 py-3 rounded-xl font-medium shadow-sm transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"> {isSyncing ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />} <span>Sync PSX</span> </button>
+                                        <button onClick={() => handleSyncPrices(false)} disabled={isSyncing} className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-800/50 text-emerald-700 dark:text-emerald-400 px-4 py-3 rounded-xl font-medium shadow-sm transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"> {isSyncing ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />} <span>Sync PSX</span> </button>
                                         {priceError && <div className="w-3 h-3 rounded-full bg-rose-500 animate-pulse" title="Some prices failed to update. Check list."></div>}
                                     </div>
                                 </>
@@ -489,7 +548,9 @@ const App: React.FC = () => {
             {currentView === 'DASHBOARD' && (
                 <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
                     <Dashboard stats={stats} lastUpdated={lastPriceUpdate} />
-                    <div className="flex flex-col gap-6">
+                    {/* NEW 30-DAY CHART INJECTED HERE */}
+                    <PortfolioHistoryChart transactions={portfolioTransactions} />
+                    <div className="flex flex-col gap-6 mt-6">
                         <AllocationChart holdings={holdings} />
                         <HoldingsTable holdings={holdings} showBroker={true} failedTickers={failedTickers} ldcpMap={ldcpMap} onTickerClick={handleTickerClick} />
                     </div>
