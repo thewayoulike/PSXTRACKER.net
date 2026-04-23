@@ -1,45 +1,24 @@
-// src/components/TradingSimulator.tsx
 import React, { useState, useMemo } from 'react';
 import { Holding, Broker, Transaction } from '../types';
 import { Card } from './ui/Card';
-import { 
-  Plus, 
-  Trash2, 
-  ArrowUpCircle, 
-  ArrowDownCircle, 
-  Info, 
-  Activity, 
-  Calculator, 
-  TrendingUp, 
-  TrendingDown, 
-  Crosshair, 
-  PieChart, 
-  LineChart,
-  CheckSquare,
-  History
-} from 'lucide-react';
+import { TickerSearch } from './ui/TickerSearch';
+import { Plus, Trash2, ArrowUpCircle, ArrowDownCircle, PieChart, LineChart, Calculator, Crosshair } from 'lucide-react';
 
 interface TradingSimulatorProps {
   holdings: Holding[];
   brokers: Broker[];
   defaultBrokerId: string;
   transactions?: Transaction[]; 
+  allSymbols?: string[];
+  currentPrices?: Record<string, number>;
 }
 
-interface SimBuy {
-  id: string;
-  quantity: number;
-  price: number;
-}
+interface SimBuy { id: string; quantity: number; price: number; }
+interface SimSell { id: string; quantity: number; price: number; isIntraday: boolean; }
 
-interface SimSell {
-  id: string;
-  quantity: number;
-  price: number;
-  isIntraday: boolean;
-}
-
-export const TradingSimulator: React.FC<TradingSimulatorProps> = ({ holdings, brokers, defaultBrokerId, transactions = [] }) => {
+export const TradingSimulator: React.FC<TradingSimulatorProps> = ({ 
+    holdings, brokers, defaultBrokerId, transactions = [], allSymbols = [], currentPrices = {} 
+}) => {
   const [selectedTicker, setSelectedTicker] = useState<string>('');
   const [buyPositions, setBuyPositions] = useState<SimBuy[]>([]);
   const [sellPositions, setSellPositions] = useState<SimSell[]>([]);
@@ -48,7 +27,8 @@ export const TradingSimulator: React.FC<TradingSimulatorProps> = ({ holdings, br
   const activeHolding = holdings.find(h => h.ticker === selectedTicker);
   const broker = brokers.find(b => b.id === defaultBrokerId) || brokers[0] || {} as Broker;
 
-  const targetPrice = customTargetPrice !== '' ? Number(customTargetPrice) : (activeHolding?.currentPrice || 0);
+  const defaultPrice = activeHolding?.currentPrice || currentPrices[selectedTicker] || 0;
+  const targetPrice = customTargetPrice !== '' ? Number(customTargetPrice) : defaultPrice;
 
   const calculateFees = (price: number, qty: number) => {
     if (!price || !qty || !broker || !broker.commissionType) return { total: 0 };
@@ -78,12 +58,8 @@ export const TradingSimulator: React.FC<TradingSimulatorProps> = ({ holdings, br
 
   const historicalState = useMemo(() => {
     if (!selectedTicker) return { openLots: [], historicalRealizedPL: 0 };
-    
     if (!transactions || transactions.length === 0) {
-        if (activeHolding) return {
-            openLots: [{ id: 'base', date: 'Aggregate', quantity: activeHolding.quantity, price: activeHolding.avgPrice, costPerShare: activeHolding.avgPrice }],
-            historicalRealizedPL: 0
-        };
+        if (activeHolding) return { openLots: [{ id: 'base', date: 'Aggregate', quantity: activeHolding.quantity, price: activeHolding.avgPrice, costPerShare: activeHolding.avgPrice }], historicalRealizedPL: 0 };
         return { openLots: [], historicalRealizedPL: 0 };
     }
 
@@ -100,113 +76,46 @@ export const TradingSimulator: React.FC<TradingSimulatorProps> = ({ holdings, br
         const dayBuys = dayTxs.filter(t => t.type === 'BUY' || t.type === 'TRANSFER_IN');
         const daySells = dayTxs.filter(t => t.type === 'SELL' || t.type === 'TRANSFER_OUT');
 
-        const dayBuyLots = dayBuys.map(t => {
-            const fees = (t.commission || 0) + (t.tax || 0) + (t.cdcCharges || 0) + (t.otherFees || 0);
-            return { id: t.id, date: t.date, quantity: t.quantity, price: t.price, costPerShare: t.quantity > 0 ? ((t.quantity * t.price) + fees) / t.quantity : 0 };
-        });
+        const dayBuyLots = dayBuys.map(t => { const fees = (t.commission || 0) + (t.tax || 0) + (t.cdcCharges || 0) + (t.otherFees || 0); return { id: t.id, date: t.date, quantity: t.quantity, price: t.price, costPerShare: t.quantity > 0 ? ((t.quantity * t.price) + fees) / t.quantity : 0 }; });
 
         daySells.forEach(sellTx => {
-            let qtyToSell = sellTx.quantity;
-            const sellFees = (sellTx.commission || 0) + (sellTx.tax || 0) + (sellTx.cdcCharges || 0) + (sellTx.otherFees || 0);
-            const netProceeds = (sellTx.quantity * sellTx.price) - sellFees;
-            let costBasis = 0;
-
-            for (const buyLot of dayBuyLots) {
-                if (qtyToSell <= 0.0001) break;
-                if (buyLot.quantity > 0) { 
-                    const match = Math.min(qtyToSell, buyLot.quantity); 
-                    costBasis += match * buyLot.costPerShare;
-                    buyLot.quantity -= match; 
-                    qtyToSell -= match; 
-                }
-            }
-            while (qtyToSell > 0.0001 && lots.length > 0) {
-                const fifoLot = lots[0];
-                const match = Math.min(qtyToSell, fifoLot.quantity);
-                costBasis += match * fifoLot.costPerShare;
-                fifoLot.quantity -= match; 
-                qtyToSell -= match;
-                if (fifoLot.quantity < 0.0001) lots.shift();
-            }
-
+            let qtyToSell = sellTx.quantity; const sellFees = (sellTx.commission || 0) + (sellTx.tax || 0) + (sellTx.cdcCharges || 0) + (sellTx.otherFees || 0); const netProceeds = (sellTx.quantity * sellTx.price) - sellFees; let costBasis = 0;
+            for (const buyLot of dayBuyLots) { if (qtyToSell <= 0.0001) break; if (buyLot.quantity > 0) { const match = Math.min(qtyToSell, buyLot.quantity); costBasis += match * buyLot.costPerShare; buyLot.quantity -= match; qtyToSell -= match; } }
+            while (qtyToSell > 0.0001 && lots.length > 0) { const fifoLot = lots[0]; const match = Math.min(qtyToSell, fifoLot.quantity); costBasis += match * fifoLot.costPerShare; fifoLot.quantity -= match; qtyToSell -= match; if (fifoLot.quantity < 0.0001) lots.shift(); }
             histRealized += (netProceeds - costBasis);
         });
 
-        // Include any manual PnL adjustments or CGT taxes stored in history
         dayTxs.filter(t => t.type === 'HISTORY').forEach(t => histRealized += t.price);
         dayTxs.filter(t => t.type === 'TAX').forEach(t => histRealized -= t.price);
-
         dayBuyLots.forEach(l => { if (l.quantity > 0.0001) lots.push(l); });
     });
-
     return { openLots: lots, historicalRealizedPL: histRealized };
   }, [selectedTicker, transactions, activeHolding]);
 
   const analysis = useMemo(() => {
-    let totalBuyQty = 0;
-    let totalBuyCostWithFees = 0;
-    
-    const processedBuys = buyPositions.map(p => {
-        const fees = calculateFees(p.price, p.quantity);
-        const cost = (p.price * p.quantity) + fees.total;
-        const avgBuy = p.quantity > 0 ? cost / p.quantity : 0;
-        totalBuyQty += p.quantity; totalBuyCostWithFees += cost;
-        return { ...p, fees: fees.total, totalCost: cost, avgBuy };
-    });
-
-    let pool = historicalState.openLots.map(l => ({ ...l }));
-    const newBuyLots = processedBuys.map(r => ({ id: r.id, qty: r.quantity, cost: r.avgBuy }));
-    
-    let totalProfit = 0;
-    let totalSellFees = 0;
+    let totalBuyQty = 0; let totalBuyCostWithFees = 0;
+    const processedBuys = buyPositions.map(p => { const fees = calculateFees(p.price, p.quantity); const cost = (p.price * p.quantity) + fees.total; const avgBuy = p.quantity > 0 ? cost / p.quantity : 0; totalBuyQty += p.quantity; totalBuyCostWithFees += cost; return { ...p, fees: fees.total, totalCost: cost, avgBuy }; });
+    let pool = historicalState.openLots.map(l => ({ ...l })); const newBuyLots = processedBuys.map(r => ({ id: r.id, qty: r.quantity, cost: r.avgBuy }));
+    let totalProfit = 0; let totalSellFees = 0;
 
     const processedSells = sellPositions.map(p => {
-        let qtyToFill = p.quantity;
-        let costBasis = 0;
-        let filledIntraday = 0;
-        let filledStandard = 0;
-
+        let qtyToFill = p.quantity; let costBasis = 0; let filledIntraday = 0; let filledStandard = 0;
         if (p.isIntraday) {
-            for (const lot of newBuyLots) {
-                if (qtyToFill <= 0) break;
-                const match = Math.min(qtyToFill, lot.qty); costBasis += match * lot.cost; lot.qty -= match; qtyToFill -= match; filledIntraday += match;
-            }
-            for (const lot of pool) {
-                if (qtyToFill <= 0) break;
-                const match = Math.min(qtyToFill, lot.quantity); costBasis += match * lot.costPerShare; lot.quantity -= match; qtyToFill -= match; filledStandard += match;
-            }
+            for (const lot of newBuyLots) { if (qtyToFill <= 0) break; const match = Math.min(qtyToFill, lot.qty); costBasis += match * lot.cost; lot.qty -= match; qtyToFill -= match; filledIntraday += match; }
+            for (const lot of pool) { if (qtyToFill <= 0) break; const match = Math.min(qtyToFill, lot.quantity); costBasis += match * lot.costPerShare; lot.quantity -= match; qtyToFill -= match; filledStandard += match; }
         } else {
-            for (const lot of pool) {
-                if (qtyToFill <= 0) break;
-                const match = Math.min(qtyToFill, lot.quantity); costBasis += match * lot.costPerShare; lot.quantity -= match; qtyToFill -= match; filledStandard += match;
-            }
-            for (const lot of newBuyLots) {
-                if (qtyToFill <= 0) break;
-                const match = Math.min(qtyToFill, lot.qty); costBasis += match * lot.cost; lot.qty -= match; qtyToFill -= match; filledStandard += match;
-            }
+            for (const lot of pool) { if (qtyToFill <= 0) break; const match = Math.min(qtyToFill, lot.quantity); costBasis += match * lot.costPerShare; lot.quantity -= match; qtyToFill -= match; filledStandard += match; }
+            for (const lot of newBuyLots) { if (qtyToFill <= 0) break; const match = Math.min(qtyToFill, lot.qty); costBasis += match * lot.cost; lot.qty -= match; qtyToFill -= match; filledStandard += match; }
         }
-
-        const sellFees = calculateFees(p.price, filledStandard).total;
-        const netRevenue = (p.quantity * p.price) - sellFees;
-        const profit = netRevenue - costBasis;
-        totalProfit += profit; totalSellFees += sellFees;
-
+        const sellFees = calculateFees(p.price, filledStandard).total; const netRevenue = (p.quantity * p.price) - sellFees; const profit = netRevenue - costBasis; totalProfit += profit; totalSellFees += sellFees;
         return { ...p, fees: sellFees, netRevenue, costBasis, profit, unfilled: qtyToFill, filledIntraday, filledStandard };
     });
 
-    const remainingHistoricalQty = pool.reduce((acc, l) => acc + l.quantity, 0);
-    const remainingHistoricalCost = pool.reduce((acc, l) => acc + (l.quantity * l.costPerShare), 0);
-    
-    let finalRemainingQty = remainingHistoricalQty;
-    let finalRemainingCost = remainingHistoricalCost;
-    
-    newBuyLots.filter(l => l.qty > 0).forEach(l => {
-        finalRemainingQty += l.qty; finalRemainingCost += (l.qty * l.cost);
-    });
-
+    const remainingHistoricalQty = pool.reduce((acc, l) => acc + l.quantity, 0); const remainingHistoricalCost = pool.reduce((acc, l) => acc + (l.quantity * l.costPerShare), 0);
+    let finalRemainingQty = remainingHistoricalQty; let finalRemainingCost = remainingHistoricalCost;
+    newBuyLots.filter(l => l.qty > 0).forEach(l => { finalRemainingQty += l.qty; finalRemainingCost += (l.qty * l.cost); });
     const finalRemainingAvg = finalRemainingQty > 0 ? finalRemainingCost / finalRemainingQty : 0;
     
-    // Projected Unrealized P&L (WITH EXIT FEES DEDUCTED)
     const finalExitFees = calculateFees(targetPrice, finalRemainingQty).total;
     const finalUnrealizedPL = finalRemainingQty > 0 ? (finalRemainingQty * targetPrice) - finalRemainingCost - finalExitFees : 0;
     
@@ -215,13 +124,10 @@ export const TradingSimulator: React.FC<TradingSimulatorProps> = ({ holdings, br
     
     const overallQtyAfterBuys = (activeHolding?.quantity || 0) + totalBuyQty;
     const overallAvgAfterBuys = overallQtyAfterBuys > 0 ? (((activeHolding?.quantity || 0) * (activeHolding?.avgPrice || 0)) + totalBuyCostWithFees) / overallQtyAfterBuys : 0;
-
-    // Absolute Lifetime Net
     const totalLifetimeNet = historicalState.historicalRealizedPL + totalProfit + finalUnrealizedPL;
 
     return { 
-        buys: processedBuys, sells: processedSells, totalBuyQty, totalBuyCostWithFees, 
-        overallQtyAfterBuys, overallAvgAfterBuys,
+        buys: processedBuys, sells: processedSells, totalBuyQty, totalBuyCostWithFees, overallQtyAfterBuys, overallAvgAfterBuys,
         totalProfit, totalSellFees, finalRemainingQty, finalRemainingAvg, finalUnrealizedPL, currentUnrealizedPL,
         finalExitFees, currentExitFees, totalLifetimeNet
     };
@@ -235,21 +141,19 @@ export const TradingSimulator: React.FC<TradingSimulatorProps> = ({ holdings, br
         <div className="flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="w-full md:w-1/3">
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Select Stock</label>
-            <select 
-              className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
-              value={selectedTicker}
-              onChange={(e) => { setSelectedTicker(e.target.value); setBuyPositions([]); setSellPositions([]); setCustomTargetPrice(''); }}
-            >
-              <option value="">Choose a stock...</option>
-              {holdings.map(h => <option key={h.ticker} value={h.ticker}>{h.ticker} ({h.quantity} shs)</option>)}
-            </select>
+            <TickerSearch 
+                value={selectedTicker} 
+                options={allSymbols.length > 0 ? allSymbols : holdings.map(h => h.ticker)} 
+                onChange={(val) => { setSelectedTicker(val); setBuyPositions([]); setSellPositions([]); setCustomTargetPrice(''); }} 
+                placeholder="Search any PSX symbol..." 
+            />
           </div>
           
-          {activeHolding && (
+          {selectedTicker && (
               <div className="flex flex-1 items-center gap-4 justify-end">
                   <div className="text-right hidden sm:block">
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Current Market Price</p>
-                      <p className="font-mono text-xl font-medium text-slate-700 dark:text-slate-300">Rs. {activeHolding.currentPrice.toFixed(2)}</p>
+                      <p className="font-mono text-xl font-medium text-slate-700 dark:text-slate-300">Rs. {defaultPrice.toFixed(2)}</p>
                   </div>
                   <div className="h-10 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
                   <div className="w-full sm:w-48 relative">
@@ -258,7 +162,7 @@ export const TradingSimulator: React.FC<TradingSimulatorProps> = ({ holdings, br
                       </label>
                       <input 
                           type="number" 
-                          placeholder={activeHolding.currentPrice.toString()}
+                          placeholder={defaultPrice.toString()}
                           value={customTargetPrice}
                           onChange={(e) => setCustomTargetPrice(e.target.value)}
                           className="w-full p-2.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-900/20 text-indigo-800 dark:text-indigo-200 font-black font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
@@ -270,7 +174,7 @@ export const TradingSimulator: React.FC<TradingSimulatorProps> = ({ holdings, br
       </Card>
 
       {/* OPEN LOTS BREAKDOWN */}
-      {activeHolding && historicalState.openLots.length > 0 && (
+      {selectedTicker && historicalState.openLots.length > 0 && (
           <Card className="p-0 overflow-hidden border-slate-200 dark:border-slate-700">
               <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
                   <h3 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2 text-sm">
@@ -314,10 +218,10 @@ export const TradingSimulator: React.FC<TradingSimulatorProps> = ({ holdings, br
                       <tfoot className="bg-slate-50 dark:bg-slate-800/80 border-t-2 border-slate-200 dark:border-slate-700 text-sm font-bold shadow-inner">
                           <tr>
                               <td className="p-4 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider">Aggregate Total</td>
-                              <td className="p-4 text-right">{activeHolding.quantity.toLocaleString()}</td>
-                              <td className="p-4 text-right font-mono">{activeHolding.avgPrice.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                              <td className="p-4 text-right font-mono">{(activeHolding.quantity * activeHolding.avgPrice).toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
-                              <td className="p-4 text-right font-mono">{(activeHolding.quantity * targetPrice).toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
+                              <td className="p-4 text-right">{(activeHolding?.quantity || 0).toLocaleString()}</td>
+                              <td className="p-4 text-right font-mono">{(activeHolding?.avgPrice || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                              <td className="p-4 text-right font-mono">{((activeHolding?.quantity || 0) * (activeHolding?.avgPrice || 0)).toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
+                              <td className="p-4 text-right font-mono">{((activeHolding?.quantity || 0) * targetPrice).toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
                               <td className={`p-4 text-right font-mono ${analysis.currentUnrealizedPL >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                                   {analysis.currentUnrealizedPL >= 0 ? '+' : ''}{analysis.currentUnrealizedPL.toLocaleString(undefined, {maximumFractionDigits: 0})}
                               </td>
@@ -339,7 +243,7 @@ export const TradingSimulator: React.FC<TradingSimulatorProps> = ({ holdings, br
             </h3>
             <button onClick={() => {
                 if (buyPositions.length < 10) setBuyPositions([...buyPositions, { id: Math.random().toString(36).substring(2, 10), quantity: 0, price: targetPrice }]);
-            }} disabled={!activeHolding} className="p-1.5 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 rounded-lg hover:bg-emerald-200 transition-colors disabled:opacity-50">
+            }} disabled={!selectedTicker} className="p-1.5 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 rounded-lg hover:bg-emerald-200 transition-colors disabled:opacity-50">
               <Plus size={16} />
             </button>
           </div>
@@ -381,7 +285,7 @@ export const TradingSimulator: React.FC<TradingSimulatorProps> = ({ holdings, br
             </h3>
             <button onClick={() => {
                 if (sellPositions.length < 10) setSellPositions([...sellPositions, { id: Math.random().toString(36).substring(2, 10), quantity: 0, price: targetPrice, isIntraday: false }]);
-            }} disabled={!activeHolding} className="p-1.5 bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 rounded-lg hover:bg-rose-200 transition-colors disabled:opacity-50">
+            }} disabled={!selectedTicker} className="p-1.5 bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 rounded-lg hover:bg-rose-200 transition-colors disabled:opacity-50">
               <Plus size={16} />
             </button>
           </div>
@@ -417,7 +321,7 @@ export const TradingSimulator: React.FC<TradingSimulatorProps> = ({ holdings, br
       </div>
 
       {/* OVERALL ABSOLUTE SUMMARY CARD */}
-      {activeHolding && (
+      {selectedTicker && (
           <Card className="p-0 overflow-hidden border-indigo-200 dark:border-indigo-800/50 shadow-xl bg-gradient-to-br from-white to-indigo-50/30 dark:from-slate-900 dark:to-indigo-950/20 mt-8">
               <div className="p-4 bg-indigo-600 dark:bg-indigo-900/50 border-b border-indigo-500 dark:border-indigo-800 flex items-center gap-2 text-white">
                   <LineChart size={20} />
