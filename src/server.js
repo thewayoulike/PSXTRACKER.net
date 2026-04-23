@@ -13,28 +13,19 @@ const port = 3001;
 
 app.use(bodyParser.json({ limit: '10mb' }));
 
-// --- 1. VPS PROXY TO BYPASS CLOUDFLARE (Now correctly listening on /api/proxy) ---
-app.get('/api/proxy', async (req, res) => {
+// --- NATIVE FETCH PROXY (NO CLOUDSCRAPER NEEDED) ---
+// Listening on both /proxy and /api/proxy to guarantee it catches the Nginx request
+app.get(['/proxy', '/api/proxy'], async (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).send("No URL provided");
     
     try {
         console.log(`[API] Fetching: ${targetUrl}`);
-        
-        // Emulate a real Windows Chrome Browser exactly to bypass Cloudflare
         const response = await fetch(targetUrl, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.9',
-                'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-                'Sec-Ch-Ua-Mobile': '?0',
-                'Sec-Ch-Ua-Platform': '"Windows"',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Fetch-User': '?1',
-                'Upgrade-Insecure-Requests': '1',
                 'Cache-Control': 'max-age=0'
             }
         });
@@ -47,14 +38,13 @@ app.get('/api/proxy', async (req, res) => {
     }
 });
 
-// 2. Database Connection
+// 1. Database Connection
 const dbPath = path.join(__dirname, 'psx_data.db');
 const db = new Database(dbPath, (err) => {
     if (err) console.error("Database connection error:", err.message);
     else console.log("Database Connected: " + dbPath);
 });
 
-// 3. Initialize Table
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS user_data (
         email TEXT PRIMARY KEY,
@@ -63,16 +53,15 @@ db.serialize(() => {
     )`);
 });
 
-// 4. API: Load Data (Corrected)
-app.get('/api/load/:email', (req, res) => {
+// 2. Dual Routes for Load / Save / Delete
+app.get(['/load/:email', '/api/load/:email'], (req, res) => {
     db.get("SELECT data FROM user_data WHERE email = ?", [req.params.email], (err, row) => {
         if (err) return res.status(500).json({ success: false, error: err.message });
         res.json({ success: true, data: row ? JSON.parse(row.data) : null });
     });
 });
 
-// 5. API: Save Data (Corrected)
-app.post('/api/save', (req, res) => {
+app.post(['/save', '/api/save'], (req, res) => {
     const { email, data } = req.body;
     if (!email || !data) return res.status(400).json({ success: false, message: "Missing data" });
     const query = `INSERT INTO user_data (email, data, last_updated) 
@@ -84,8 +73,7 @@ app.post('/api/save', (req, res) => {
     });
 });
 
-// 6. API: Delete Data (Corrected)
-app.delete('/api/delete/:email', (req, res) => {
+app.delete(['/delete/:email', '/api/delete/:email'], (req, res) => {
     db.run(`DELETE FROM user_data WHERE email = ?`, [req.params.email], (err) => {
         if (err) return res.status(500).json({ success: false });
         res.json({ success: true });
