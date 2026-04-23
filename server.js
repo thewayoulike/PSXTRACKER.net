@@ -1,5 +1,3 @@
-cd /var/www/psxtracker
-cat << 'EOF' > server.js
 import express from 'express';
 import sqlite3pkg from 'sqlite3';
 import bodyParser from 'body-parser';
@@ -14,29 +12,22 @@ const port = 3001;
 
 app.use(bodyParser.json({ limit: '10mb' }));
 
-// Native Fetch Proxy
 app.get(['/proxy', '/api/proxy'], async (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).send("No URL provided");
     try {
-        console.log(`[API] Fetching: ${targetUrl}`);
         const response = await fetch(targetUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
-            }
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' }
         });
         const data = await response.text();
         res.send(data);
     } catch (error) {
-        console.error("Proxy Error:", error);
         res.status(500).json({ error: error.message });
     }
 });
 
 const dbPath = path.join(__dirname, 'psx_data.db');
 const db = new Database(dbPath);
-
 db.serialize(() => {
     db.run("CREATE TABLE IF NOT EXISTS user_data (email TEXT PRIMARY KEY, data TEXT, last_updated DATETIME DEFAULT CURRENT_TIMESTAMP)");
 });
@@ -57,9 +48,4 @@ app.post(['/save', '/api/save'], (req, res) => {
     });
 });
 
-app.delete(['/delete/:email', '/api/delete/:email'], (req, res) => {
-    db.run("DELETE FROM user_data WHERE email = ?", [req.params.email], () => res.json({ success: true }));
-});
-
-app.listen(port, "0.0.0.0", () => console.log(`Backend listening on port ${port}`));
-EOF
+app.listen(port, "0.0.0.0", () => console.log(`Server running on port ${port}`));
