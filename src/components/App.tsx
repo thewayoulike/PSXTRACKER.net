@@ -47,18 +47,14 @@ const App: React.FC = () => {
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [currentView, setCurrentView] = useState<AppView>('DASHBOARD');
   const [viewTicker, setViewTicker] = useState<string | null>(null);
+  
+  // --- STATE FOR SCRAPED DATA ---
   const [allSymbols, setAllSymbols] = useState<string[]>([]);
-  const [marketSectors, setMarketSectors] = useState<Record<string, string>>({}); // <-- ADD THIS LINE
+  const [marketSectors, setMarketSectors] = useState<Record<string, string>>({});
 
-  const [brokers, setBrokers] = useState<Broker[]>(() => {
-      try { const saved = localStorage.getItem('psx_brokers'); if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed) && parsed.length > 0) return parsed; } } catch (e) {} return [DEFAULT_BROKER];
-  });
-  const [transactions, setTransactions] = useState<Transaction[]>(() => {
-      try { const saved = localStorage.getItem('psx_transactions'); if (saved) return JSON.parse(saved).filter((t: Transaction) => !t.id.startsWith('auto-cgt-')); } catch (e) {} return INITIAL_TRANSACTIONS as Transaction[];
-  });
-  const [portfolios, setPortfolios] = useState<Portfolio[]>(() => {
-      try { const saved = localStorage.getItem('psx_portfolios'); if (saved) return JSON.parse(saved); } catch (e) {} return [DEFAULT_PORTFOLIO];
-  });
+  const [brokers, setBrokers] = useState<Broker[]>(() => { try { const saved = localStorage.getItem('psx_brokers'); if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed) && parsed.length > 0) return parsed; } } catch (e) {} return [DEFAULT_BROKER]; });
+  const [transactions, setTransactions] = useState<Transaction[]>(() => { try { const saved = localStorage.getItem('psx_transactions'); if (saved) return JSON.parse(saved).filter((t: Transaction) => !t.id.startsWith('auto-cgt-')); } catch (e) {} return INITIAL_TRANSACTIONS as Transaction[]; });
+  const [portfolios, setPortfolios] = useState<Portfolio[]>(() => { try { const saved = localStorage.getItem('psx_portfolios'); if (saved) return JSON.parse(saved); } catch (e) {} return [DEFAULT_PORTFOLIO]; });
   const [currentPortfolioId, setCurrentPortfolioId] = useState<string>(() => localStorage.getItem('psx_current_portfolio_id') || DEFAULT_PORTFOLIO.id);
   const [scannerState, setScannerState] = useState<Record<string, FoundDividend[]>>(() => { try { const saved = localStorage.getItem('psx_scanner_state'); if (saved) return JSON.parse(saved); } catch (e) {} return {}; });
   const [tradeScanResults, setTradeScanResults] = useState<EditableTrade[]>(() => { try { const saved = localStorage.getItem('psx_trade_scan_results'); if (saved) return JSON.parse(saved); } catch (e) {} return []; });
@@ -96,23 +92,20 @@ const App: React.FC = () => {
 
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [failedTickers, setFailedTickers] = useState<Set<string>>(new Set());
-
   const isReadyToSave = useRef(false);
 
   const lastPriceUpdate = useMemo(() => { const times = Object.values(priceTimestamps); if (times.length === 0) return null; return times.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]; }, [priceTimestamps]);
+  
+  // --- UPDATED SECTOR MAP TO USE SCRAPED DATA ---
   const sectorMap = useMemo(() => { 
-      const map: Record<string, string> = { ...marketSectors }; // Load the live scraped sectors first
+      const map: Record<string, string> = { ...marketSectors }; 
       const uTickers = new Set(transactions.map(t => t.ticker)); 
-      uTickers.forEach(t => { 
-          map[t] = sectorOverrides[t] || map[t] || getSector(t); // Overrides > Scraped Live > Hardcoded Fallback
-      }); 
+      uTickers.forEach(t => { map[t] = sectorOverrides[t] || map[t] || getSector(t); }); 
       return map; 
   }, [transactions, sectorOverrides, marketSectors]);
 
   const performLogout = useCallback(() => { setTransactions([]); setPortfolios([DEFAULT_PORTFOLIO]); setHoldings([]); setRealizedTrades([]); setManualPrices({}); setLdcpMap({}); setPriceTimestamps({}); setSectorOverrides({}); setBrokers([DEFAULT_BROKER]); setScannerState({}); setTradeScanResults([]); setUserApiKey(''); setUserScraperKey(''); setUserWebScrapingAIKey(''); setGeminiApiKey(null); setScrapingApiKey(null); setWebScrapingAIKey(null); setDriveUser(null); setGoogleSheetId(null); localStorage.clear(); signOutDrive(); isReadyToSave.current = false; }, []);
-
   useIdleTimer(1800000, () => { if (transactions.length > 0 || driveUser) { performLogout(); alert("Session timed out due to inactivity. Data cleared for security."); } });
-
   const handleManualLogout = () => { if (window.confirm("Logout and clear local data?")) { performLogout(); } };
   const handleWipeData = async () => { if (!driveUser) return; const confirmed = window.confirm("⚠️ DANGER: This will permanently delete ALL your portfolio data and history from our servers. This cannot be undone. Proceed?"); if (confirmed) { const success = await deleteUserData(driveUser.email); if (success) { alert("Your account data has been completely wiped."); performLogout(); } else { alert("Failed to wipe data. Please try again later."); } } };
   const handleLogin = () => signInWithDrive();
@@ -120,11 +113,12 @@ const App: React.FC = () => {
   useEffect(() => { if (userApiKey) setGeminiApiKey(userApiKey); if (userScraperKey) setScrapingApiKey(userScraperKey); if (userWebScrapingAIKey) setWebScrapingAIKey(userWebScrapingAIKey); }, [userApiKey, userScraperKey, userWebScrapingAIKey]);
   useEffect(() => { if (isCombinedView && combinedPortfolioIds.size === 0 && portfolios.length > 0) { setCombinedPortfolioIds(new Set(portfolios.map(p => p.id))); } }, [isCombinedView, portfolios, combinedPortfolioIds.size]);
 
+  // --- FETCH SCRAPED DATA ON LOAD ---
   useEffect(() => { 
       fetchAllPSXSymbols().then(data => { 
-          if (data && Object.keys(data).length > 0) { 
-              setAllSymbols(Object.keys(data).sort()); 
-              setMarketSectors(data); 
+          if (data && data.symbols.length > 0) { 
+              setAllSymbols(data.symbols);
+              setMarketSectors(data.sectors);
           } 
       }); 
   }, []);
