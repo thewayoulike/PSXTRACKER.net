@@ -6,7 +6,7 @@ import { parseTradeDocument } from '../services/gemini';
 import { searchGmailMessages, downloadGmailAttachment } from '../services/driveStorage';
 import { exportToCSV } from '../utils/export';
 import * as XLSX from 'xlsx';
-import { TickerSearch } from './ui/TickerSearch'; // Import the new component
+import { TickerSearch } from './ui/TickerSearch';
 
 interface TransactionFormProps {
   onAddTransaction: (transaction: Omit<Transaction, 'id' | 'portfolioId'>) => void;
@@ -21,7 +21,7 @@ interface TransactionFormProps {
   freeCash?: number;
   savedScannedTrades?: EditableTrade[];
   onSaveScannedTrades?: (trades: EditableTrade[]) => void;
-  allSymbols?: string[]; // Receive symbols
+  allSymbols?: string[];
 }
 
 const normalizeDate = (input: any): string => {
@@ -65,7 +65,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
   freeCash,
   savedScannedTrades = [],
   onSaveScannedTrades,
-  allSymbols = [] // Receive symbols
+  allSymbols = [] 
 }) => {
   const [mode, setMode] = useState<'MANUAL' | 'IMPORT' | 'AI_SCAN' | 'OCR_SCAN' | 'EMAIL_IMPORT'>('MANUAL');
   const [type, setType] = useState<'BUY' | 'SELL' | 'DIVIDEND' | 'TAX' | 'HISTORY' | 'DEPOSIT' | 'WITHDRAWAL' | 'ANNUAL_FEE' | 'OTHER'>('BUY');
@@ -101,7 +101,6 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // THE MISSING FUNCTION FIX IS RIGHT HERE
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files.length > 0) {
           setSelectedFile(e.target.files[0]);
@@ -113,14 +112,20 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
       if (onSaveScannedTrades) onSaveScannedTrades(trades);
   };
 
+  // --- FIX: Included Dividends, Deposits, and Taxes in the Net Flow Math ---
   const scanTotals = useMemo(() => {
       let totalBuy = 0;
       let totalSell = 0;
       savedScannedTrades.forEach(t => {
           const val = Number(t.quantity) * Number(t.price);
           const fees = (Number(t.commission)||0) + (Number(t.tax)||0) + (Number(t.cdcCharges)||0) + (Number(t.otherFees)||0);
+          
           if (t.type === 'BUY') totalBuy += (val + fees);
           else if (t.type === 'SELL') totalSell += (val - fees);
+          else if (t.type === 'DIVIDEND') totalSell += (val - (Number(t.tax)||0)); // Income
+          else if (t.type === 'DEPOSIT') totalSell += val; // Inflow
+          else if (t.type === 'WITHDRAWAL') totalBuy += val; // Outflow
+          else if (t.type === 'TAX') totalBuy += val; // Outflow
       });
       return { totalBuy, totalSell, net: totalSell - totalBuy };
   }, [savedScannedTrades]);
@@ -289,27 +294,32 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
   const toggleScanSelection = (index: number) => { const next = new Set(selectedScanIndices); if (next.has(index)) next.delete(index); else next.add(index); setSelectedScanIndices(next); };
   const toggleSelectAll = () => { if (selectedScanIndices.size === savedScannedTrades.length) setSelectedScanIndices(new Set()); else setSelectedScanIndices(new Set(savedScannedTrades.map((_, i) => i))); };
   const getTradeCost = (t: EditableTrade) => { return (Number(t.quantity) * Number(t.price)) + (Number(t.commission)||0) + (Number(t.tax)||0) + (Number(t.cdcCharges)||0) + (Number(t.otherFees)||0); };
-  const addSingleTrade = (trade: EditableTrade) => { let finalBrokerName = trade.broker; if (trade.brokerId) { const b = brokers.find(br => br.id === trade.brokerId); if (b) finalBrokerName = b.name; } onAddTransaction({ ticker: trade.ticker, type: trade.type as any, quantity: Number(trade.quantity), price: Number(trade.price), date: trade.date || new Date().toISOString().split('T')[0], broker: finalBrokerName, brokerId: trade.brokerId, commission: Number(trade.commission) || 0, tax: Number(trade.tax) || 0, cdcCharges: Number(trade.cdcCharges) || 0, otherFees: Number(trade.otherFees) || 0 }); };
   
+  const addSingleTrade = (trade: EditableTrade) => { 
+      let finalBrokerName = trade.broker; 
+      if (trade.brokerId) { 
+          const b = brokers.find(br => br.id === trade.brokerId); 
+          if (b) finalBrokerName = b.name; 
+      } 
+      onAddTransaction({ 
+          ticker: trade.ticker, 
+          type: trade.type as any, 
+          quantity: Number(trade.quantity) || 1, // Fallback for deposits
+          price: Number(trade.price), 
+          date: trade.date || new Date().toISOString().split('T')[0], 
+          broker: finalBrokerName, 
+          brokerId: trade.brokerId, 
+          commission: Number(trade.commission) || 0, 
+          tax: Number(trade.tax) || 0, 
+          cdcCharges: Number(trade.cdcCharges) || 0, 
+          otherFees: Number(trade.otherFees) || 0 
+      }); 
+  };
+  
+  // --- FIX: Removed Strict Check for Bulk Imports ---
   const handleAcceptTrade = (trade: EditableTrade) => { 
       setFormError(null); 
-      if (trade.type === 'BUY' && freeCash !== undefined) { 
-          const cost = getTradeCost(trade); 
-          if (cost > freeCash) { 
-              setFormError(`Insufficient Buying Power! This trade costs Rs. ${cost.toLocaleString()} but you have Rs. ${freeCash.toLocaleString()}.`); 
-              scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); // SCROLL TO ERROR
-              return; 
-          } 
-      } 
-      if (trade.type === 'SELL') { 
-          const targetBrokerId = trade.brokerId || selectedBrokerId; 
-          const currentQty = getHoldingQty(trade.ticker, targetBrokerId); 
-          if (Number(trade.quantity) > currentQty) { 
-              setFormError(`Insufficient Holdings! You are trying to sell ${trade.quantity} ${trade.ticker}, but you only own ${currentQty}.`); 
-              scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); // SCROLL TO ERROR
-              return; 
-          } 
-      } 
+      // Historical ledgers shouldn't be blocked by current cash constraints.
       addSingleTrade(trade); 
       updateScannedTrades(savedScannedTrades.filter(t => t !== trade)); 
   };
@@ -318,13 +328,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
       setFormError(null); 
       const selectedTrades = savedScannedTrades.filter((_, i) => selectedScanIndices.has(i)); 
       
-      const totalBuyCost = selectedTrades.reduce((acc, t) => { return t.type === 'BUY' ? acc + getTradeCost(t) : acc; }, 0); 
-      if (freeCash !== undefined && totalBuyCost > freeCash) { 
-          setFormError(`Insufficient Buying Power! Selected trades cost Rs. ${totalBuyCost.toLocaleString()} but you have Rs. ${freeCash.toLocaleString()}.`); 
-          scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); 
-          return; 
-      } 
-      
+      // Historical ledgers shouldn't be blocked by current cash constraints.
       selectedTrades.forEach(addSingleTrade); 
       updateScannedTrades(savedScannedTrades.filter((_, i) => !selectedScanIndices.has(i))); 
       setSelectedScanIndices(new Set()); 
@@ -401,7 +405,6 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
           <div className="grid grid-cols-2 gap-4"> 
               <div><label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Date</label><input required type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-sm dark:text-slate-200 focus:ring-2 focus:ring-emerald-500/20 outline-none dark:color-scheme-dark"/></div> 
               
-              {/* REPLACED STANDARD INPUT WITH TICKERSEARCH */}
               <div>
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Ticker</label>
                   <TickerSearch 
@@ -459,7 +462,6 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
             </div>
         )}
 
-        {/* SCROLLABLE AREA REF for Auto-Scroll on Error */}
         <div ref={scrollContainerRef} className="p-6 pt-0 flex-1 overflow-y-auto custom-scrollbar scroll-smooth">
             {formError && ( <div className="bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-xl p-4 flex items-start gap-3 animate-in slide-in-from-top-2 mb-4"> <AlertCircle className="text-rose-500 dark:text-rose-400 shrink-0 mt-0.5" size={18} /> <div> <h4 className="font-bold text-rose-800 dark:text-rose-200 text-sm">Action Blocked</h4> <p className="text-xs text-rose-600 dark:text-rose-300 mt-1">{formError}</p> </div> </div> )}
 
@@ -611,7 +613,23 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-3 gap-3 mb-3"> <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 rounded-xl p-3 flex flex-col justify-center items-center shadow-sm"> <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 tracking-wider">Total Buy Cost</span> <div className="text-sm font-bold text-emerald-800 dark:text-emerald-200">Rs. {scanTotals.totalBuy.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div> </div> <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-xl p-3 flex flex-col justify-center items-center shadow-sm"> <span className="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 tracking-wider">Total Sell Proceeds</span> <div className="text-sm font-bold text-blue-800 dark:text-blue-200">Rs. {scanTotals.totalSell.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div> </div> <div className={`border rounded-xl p-3 flex flex-col justify-center items-center shadow-sm ${scanTotals.net >= 0 ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800' : 'bg-rose-50 dark:bg-rose-900/20 border-rose-100 dark:border-rose-800'}`}> <span className={`text-[10px] uppercase font-bold tracking-wider ${scanTotals.net >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-rose-600 dark:text-rose-400'}`}>Net Flow (In/Out)</span> <div className={`text-sm font-bold ${scanTotals.net >= 0 ? 'text-indigo-800 dark:text-indigo-200' : 'text-rose-800 dark:text-rose-200'}`}> {scanTotals.net >= 0 ? '+' : ''}Rs. {scanTotals.net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} </div> </div> </div>
+                            <div className="grid grid-cols-3 gap-3 mb-3"> 
+                                <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 rounded-xl p-3 flex flex-col justify-center items-center shadow-sm"> 
+                                    <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 tracking-wider">Total Buy Cost</span> 
+                                    <div className="text-sm font-bold text-emerald-800 dark:text-emerald-200">Rs. {scanTotals.totalBuy.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div> 
+                                </div> 
+                                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-xl p-3 flex flex-col justify-center items-center shadow-sm"> 
+                                    <span className="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 tracking-wider">Total Sell Proceeds</span> 
+                                    <div className="text-sm font-bold text-blue-800 dark:text-blue-200">Rs. {scanTotals.totalSell.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div> 
+                                </div> 
+                                <div className={`border rounded-xl p-3 flex flex-col justify-center items-center shadow-sm ${scanTotals.net >= 0 ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800' : 'bg-rose-50 dark:bg-rose-900/20 border-rose-100 dark:border-rose-800'}`}> 
+                                    <span className={`text-[10px] uppercase font-bold tracking-wider ${scanTotals.net >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-rose-600 dark:text-rose-400'}`}>Net Flow (In/Out)</span> 
+                                    <div className={`text-sm font-bold ${scanTotals.net >= 0 ? 'text-indigo-800 dark:text-indigo-200' : 'text-rose-800 dark:text-rose-200'}`}> 
+                                        {scanTotals.net >= 0 ? '+' : ''}Rs. {scanTotals.net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 
+                                    </div> 
+                                </div> 
+                            </div>
+
                             <div className="flex-1 overflow-auto border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 shadow-sm">
                                 <table className="w-full text-left border-collapse min-w-[1000px]">
                                     <thead> <tr className="bg-slate-50 dark:bg-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-700"> <th className="px-3 py-3 text-center w-10"> <input type="checkbox" onChange={toggleSelectAll} checked={selectedScanIndices.size === savedScannedTrades.length && savedScannedTrades.length > 0} className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500 cursor-pointer"/> </th> <th className="px-3 py-3">Type</th> <th className="px-3 py-3">Date</th> <th className="px-3 py-3">Ticker</th> <th className="px-3 py-3">Broker</th> <th className="px-3 py-3 w-24">Qty</th> <th className="px-3 py-3 w-24">Price</th> <th className="px-2 py-3 w-20 text-slate-400">Comm</th> <th className="px-2 py-3 w-20 text-slate-400">Tax</th> <th className="px-2 py-3 w-20 text-slate-400">CDC</th> <th className="px-2 py-3 w-20 text-slate-400">Other</th> <th className="px-3 py-3 text-center">Action</th> </tr> </thead>
