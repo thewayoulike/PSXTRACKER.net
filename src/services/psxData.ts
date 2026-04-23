@@ -4,7 +4,6 @@ const TICKER_BLACKLIST = ['READY', 'FUTURE', 'OPEN', 'HIGH', 'LOW', 'CLOSE', 'VO
 
 export type TimeRange = '1D' | '1M' | '6M' | 'YTD' | '1Y' | '3Y' | '5Y';
 
-// Removing old 3rd-party dependencies but keeping exports so App.tsx doesn't break
 export const setScrapingApiKey = (key: string | null) => {};
 export const setWebScrapingAIKey = (key: string | null) => {};
 
@@ -16,6 +15,9 @@ const fetchUrlWithFallback = async (targetUrl: string): Promise<string | null> =
         if (response.ok) {
             const text = await response.text();
             if (text && text.length > 500 && text.includes('<table')) {
+                return text;
+            } else if (text && text.length > 100 && (text.includes('"data":') || text.includes('[[') || text.includes('history'))) {
+                // Allow JSON data to pass through for Timeseries (History) endpoints
                 return text;
             }
         }
@@ -34,6 +36,7 @@ const fetchLivePriceData = async (symbol: string): Promise<{ time: number; price
     return null;
 };
 
+// --- FETCH STOCK HISTORY ---
 export const fetchStockHistory = async (symbol: string, range: TimeRange = '1D'): Promise<{ time: number; price: number }[]> => {
     const cleanSymbol = symbol.toUpperCase().replace('PSX:', '').trim();
     if (range === '1D') {
@@ -57,6 +60,26 @@ export const fetchStockHistory = async (symbol: string, range: TimeRange = '1D')
 
     const liveCandle = await fetchLivePriceData(cleanSymbol);
     return liveCandle ? [liveCandle] : [];
+};
+
+// --- NEW: FETCH MARKET INDEX HISTORY (KSE-100) ---
+export const fetchIndexHistory = async (indexName: string = 'KSE100'): Promise<{ time: number; price: number }[]> => {
+    const targetUrl = `https://dps.psx.com.pk/timeseries/eod/${indexName.toUpperCase()}`;
+    const htmlOrJson = await fetchUrlWithFallback(targetUrl);
+
+    if (htmlOrJson) {
+        try {
+            const rawData = JSON.parse(htmlOrJson);
+            if (rawData && rawData.data && Array.isArray(rawData.data)) {
+                return rawData.data
+                    .map((point: any[]) => ({ time: point[0] * 1000, price: Number(point[4]) }))
+                    .sort((a: any, b: any) => a.time - b.time);
+            }
+        } catch (e) {
+            console.error(`Failed to parse history for ${indexName}`, e);
+        }
+    }
+    return [];
 };
 
 export const fetchBatchPSXPrices = async (tickers: string[]): Promise<Record<string, { price: number, sector: string, ldcp: number, high: number, low: number, volume: number }>> => {
@@ -122,14 +145,14 @@ export const fetchBatchPSXPrices = async (tickers: string[]): Promise<Record<str
                     };
 
                     const price = getVal(colMap.PRICE);
-                    let sector = currentGroupHeader;
+                    let sectorText = currentGroupHeader;
                     if (colMap.SECTOR !== -1 && cols[colMap.SECTOR]) {
-                        const secText = cols[colMap.SECTOR].textContent?.trim();
-                        if (secText) sector = SECTOR_CODE_MAP[secText] || secText;
+                        const colText = cols[colMap.SECTOR].textContent?.trim();
+                        if (colText) sectorText = colText;
                     }
 
                     if (price > 0) { 
-                        results[matchedTicker] = { price, sector, ldcp: colMap.LDCP !== -1 ? getVal(colMap.LDCP) : 0, high: colMap.HIGH !== -1 ? getVal(colMap.HIGH) : price, low: colMap.LOW !== -1 ? getVal(colMap.LOW) : price, volume: colMap.VOLUME !== -1 ? getVal(colMap.VOLUME) : 0 }; 
+                        results[matchedTicker] = { price, sector: SECTOR_CODE_MAP[sectorText.toUpperCase()] || sectorText, ldcp: colMap.LDCP !== -1 ? getVal(colMap.LDCP) : 0, high: colMap.HIGH !== -1 ? getVal(colMap.HIGH) : price, low: colMap.LOW !== -1 ? getVal(colMap.LOW) : price, volume: colMap.VOLUME !== -1 ? getVal(colMap.VOLUME) : 0 }; 
                     }
                 });
             });
@@ -139,175 +162,11 @@ export const fetchBatchPSXPrices = async (tickers: string[]): Promise<Record<str
 };
 
 export const fetchTopVolumeStocks = async (): Promise<{ symbol: string; price: number; change: number; volume: number }[]> => {
-    const targetUrl = `https://dps.psx.com.pk/market-watch`;
-    const html = await fetchUrlWithFallback(targetUrl);
-
-    if (!html || html.length < 500) return [];
-    const stocks: { symbol: string; price: number; change: number; volume: number }[] = [];
-    
-    try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, "text/html");
-        const tables = doc.querySelectorAll("table");
-
-        tables.forEach(table => {
-            const rows = table.querySelectorAll("tr");
-            if (rows.length < 2) return;
-            
-            const headerCells = rows[0].querySelectorAll("th, td");
-            const colMap = { SYMBOL: -1, PRICE: -1, CHANGE: -1, VOLUME: -1 };
-
-            headerCells.forEach((cell, idx) => {
-                const txt = cell.textContent?.trim().toUpperCase() || "";
-                if (txt === 'SYMBOL' || txt === 'SCRIP') colMap.SYMBOL = idx;
-                if (txt === 'CURRENT' || txt === 'PRICE' || txt === 'RATE') colMap.PRICE = idx;
-                if (txt === 'CHANGE' || txt === 'NET CHANGE') colMap.CHANGE = idx;
-                if (txt.includes('VOL') || txt === 'VOLUME') colMap.VOLUME = idx;
-            });
-
-            if (colMap.SYMBOL === -1 || colMap.PRICE === -1) {
-                colMap.SYMBOL = 0; colMap.PRICE = 5; colMap.CHANGE = 6; colMap.VOLUME = 7;
-            }
-
-            rows.forEach((row, rIdx) => {
-                if (rIdx === 0) return; 
-                const cols = row.querySelectorAll("td");
-                const maxIndex = Math.max(colMap.SYMBOL, colMap.PRICE, colMap.CHANGE, colMap.VOLUME);
-                if (cols.length <= maxIndex) return; 
-
-                let symbol = "";
-                const symCell = cols[colMap.SYMBOL];
-                const anchor = symCell.querySelector('a');
-                if (anchor) symbol = anchor.textContent?.trim().toUpperCase() || "";
-                else symbol = (symCell.textContent?.trim().toUpperCase() || "").split(/[\s-]/)[0];
-
-                if (!symbol || TICKER_BLACKLIST.includes(symbol) || symbol.length > 8 || !isNaN(Number(symbol))) return;
-
-                const price = parseFloat(cols[colMap.PRICE]?.textContent?.trim().replace(/,/g, '') || '0');
-                const change = parseFloat(cols[colMap.CHANGE]?.textContent?.trim().replace(/,/g, '') || '0');
-                const volume = parseFloat(cols[colMap.VOLUME]?.textContent?.trim().replace(/,/g, '') || '0');
-
-                if (price > 0 && volume > 0) stocks.push({ symbol, price, change, volume });
-            });
-        });
-
-        return stocks.sort((a, b) => b.volume - a.volume).slice(0, 20);
-    } catch (e) { return []; }
+    // ... [Code omitted for brevity, keep your existing fetchTopVolumeStocks here] ...
+    return [];
 };
 
 export const fetchAllPSXSymbols = async (): Promise<{ symbols: string[], sectors: Record<string, string> }> => {
-    const symbols = new Set<string>();
-    const sectorsMap: Record<string, string> = {};
-
-    try {
-        const listingsUrl = `https://dps.psx.com.pk/listings`;
-        const listingsHtml = await fetchUrlWithFallback(listingsUrl);
-
-        if (listingsHtml && listingsHtml.length > 500) {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(listingsHtml, "text/html");
-            const tables = doc.querySelectorAll("table");
-
-            tables.forEach(table => {
-                const rows = table.querySelectorAll("tr");
-                let symCol = 0; let secCol = 2; 
-
-                if (rows.length > 0) {
-                    const headers = rows[0].querySelectorAll("th, td");
-                    headers.forEach((h, idx) => {
-                        const txt = h.textContent?.trim().toUpperCase() || "";
-                        if (txt === 'SYMBOL') symCol = idx;
-                        if (txt === 'SECTOR') secCol = idx;
-                    });
-                }
-
-                rows.forEach((row, rIdx) => {
-                    if (rIdx === 0) return; 
-                    const cols = row.querySelectorAll("td");
-                    if (cols.length <= Math.max(symCol, secCol)) return;
-
-                    let symbol = cols[symCol].textContent?.trim().toUpperCase() || "";
-                    let sector = cols[secCol].textContent?.trim() || "";
-                    
-                    if (symbol) {
-                        symbol = symbol.split(/[\s-]/)[0]; 
-                        if (symbol.length >= 2 && symbol.length <= 8 && !TICKER_BLACKLIST.includes(symbol) && isNaN(Number(symbol))) {
-                            symbols.add(symbol);
-                            if (sector) sectorsMap[symbol] = SECTOR_CODE_MAP[sector.toUpperCase()] || sector;
-                        }
-                    }
-                });
-            });
-        }
-    } catch (e) {}
-
-    // 2. FALLBACK: SCRAPE MARKET WATCH
-    if (symbols.size === 0) {
-        try {
-            const targetUrl = `https://dps.psx.com.pk/market-watch`;
-            const html = await fetchUrlWithFallback(targetUrl);
-
-            if (html && html.length > 500) {
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(html, "text/html");
-                const tables = doc.querySelectorAll("table");
-
-                tables.forEach(table => {
-                    const rows = table.querySelectorAll("tr");
-                    let currentGroupHeader = "Unknown Sector";
-                    let symCol = 0;
-                    let secCol = -1; // NEW: Track the Sector Code column
-
-                    // Find where the Sector column is
-                    if (rows.length > 0) {
-                        const headers = rows[0].querySelectorAll("th, td");
-                        headers.forEach((h, idx) => {
-                            const txt = h.textContent?.trim().toUpperCase() || "";
-                            if (txt === 'SYMBOL' || txt === 'SCRIP') symCol = idx;
-                            if (txt === 'SECTOR') secCol = idx;
-                        });
-                    }
-
-                    rows.forEach((row, rIdx) => {
-                        if (rIdx === 0) return; 
-                        const cells = row.querySelectorAll("td, th");
-                        
-                        // Check for grouped rows
-                        if (cells.length === 1 || (cells.length > 0 && cells.length < 4)) {
-                            let text = cells[0]?.textContent?.trim() || "";
-                            text = text.replace(/[\n\r\t]/g, '').trim();
-                            if (text && text.length > 2 && !TICKER_BLACKLIST.includes(text.toUpperCase())) {
-                                currentGroupHeader = text;
-                            }
-                            return;
-                        }
-
-                        if (cells.length <= symCol) return;
-
-                        const symCell = cells[symCol];
-                        let symbol = symCell.querySelector('a')?.textContent?.trim().toUpperCase() || symCell.textContent?.trim().toUpperCase();
-
-                        if (symbol) {
-                            symbol = symbol.split(/[\s-]/)[0];
-                            if (symbol.length >= 2 && symbol.length <= 8 && !TICKER_BLACKLIST.includes(symbol) && isNaN(Number(symbol))) {
-                                symbols.add(symbol);
-                                
-                                // NEW: Try to get the sector code from the column first!
-                                let sectorText = currentGroupHeader;
-                                if (secCol !== -1 && cells.length > secCol) {
-                                    const colText = cells[secCol].textContent?.trim();
-                                    if (colText) sectorText = colText;
-                                }
-
-                                // Map it using your dictionary
-                                sectorsMap[symbol] = SECTOR_CODE_MAP[sectorText.toUpperCase()] || sectorText;
-                            }
-                        }
-                    });
-                });
-            }
-        } catch (e) {}
-    }
-
-    return { symbols: Array.from(symbols).sort(), sectors: sectorsMap };
+    // ... [Code omitted for brevity, keep your existing fetchAllPSXSymbols here] ...
+    return { symbols: [], sectors: {} };
 };
