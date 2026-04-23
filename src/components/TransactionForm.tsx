@@ -6,6 +6,7 @@ import { parseTradeDocument } from '../services/gemini';
 import { searchGmailMessages, downloadGmailAttachment } from '../services/driveStorage';
 import { exportToCSV } from '../utils/export';
 import * as XLSX from 'xlsx';
+import { TickerSearch } from './ui/TickerSearch'; // Import the new component
 
 interface TransactionFormProps {
   onAddTransaction: (transaction: Omit<Transaction, 'id' | 'portfolioId'>) => void;
@@ -20,6 +21,7 @@ interface TransactionFormProps {
   freeCash?: number;
   savedScannedTrades?: EditableTrade[];
   onSaveScannedTrades?: (trades: EditableTrade[]) => void;
+  allSymbols?: string[]; // Added allSymbols prop
 }
 
 const normalizeDate = (input: any): string => {
@@ -62,7 +64,8 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
   portfolioDefaultBrokerId,
   freeCash,
   savedScannedTrades = [],
-  onSaveScannedTrades
+  onSaveScannedTrades,
+  allSymbols = [] // Receive symbols
 }) => {
   const [mode, setMode] = useState<'MANUAL' | 'IMPORT' | 'AI_SCAN' | 'OCR_SCAN' | 'EMAIL_IMPORT'>('MANUAL');
   const [type, setType] = useState<'BUY' | 'SELL' | 'DIVIDEND' | 'TAX' | 'HISTORY' | 'DEPOSIT' | 'WITHDRAWAL' | 'ANNUAL_FEE' | 'OTHER'>('BUY');
@@ -240,8 +243,6 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
   
   const handleManualSubmit = (e: React.FormEvent) => { e.preventDefault(); setFormError(null); const cleanTicker = ticker.toUpperCase(); let brokerName = undefined; const b = brokers.find(b => b.id === selectedBrokerId); if (b) brokerName = b.name; const qtyNum = Number(quantity); if (type === 'SELL') { const heldQty = getHoldingQty(cleanTicker, selectedBrokerId); let adjustedQty = heldQty; if (editingTransaction && editingTransaction.type === 'SELL' && editingTransaction.ticker === cleanTicker) { adjustedQty += editingTransaction.quantity; } else if (editingTransaction && editingTransaction.type === 'BUY' && editingTransaction.ticker === cleanTicker) { adjustedQty -= editingTransaction.quantity; } if (qtyNum > adjustedQty) { setFormError(`Insufficient holdings! You only have ${adjustedQty} shares of ${cleanTicker} at ${brokerName || 'this broker'}.`); return; } } if (type === 'BUY' && !editingTransaction && freeCash !== undefined) { const totalCost = (qtyNum * Number(price)) + Number(commission) + Number(tax) + Number(cdcCharges) + Number(otherFees); if (totalCost > freeCash) { setFormError(`Insufficient Buying Power! You need Rs. ${totalCost.toLocaleString(undefined, { maximumFractionDigits: 0 })} but only have Rs. ${freeCash.toLocaleString(undefined, { maximumFractionDigits: 0 })}.`); return; } } const txData: any = { ticker: cleanTicker, type, quantity: qtyNum, price: Number(price), date, broker: brokerName, brokerId: selectedBrokerId, commission: Number(commission) || 0, tax: Number(tax) || 0, cdcCharges: Number(cdcCharges) || 0, otherFees: Number(otherFees) || 0, category: type === 'OTHER' ? category : undefined, notes: notes.trim() || undefined }; if (type === 'OTHER') { txData.ticker = category === 'ADJUSTMENT' ? 'ADJUSTMENT' : category === 'CDC_CHARGE' ? 'CDC CHARGE' : 'OTHER FEE'; } if (editingTransaction && onUpdateTransaction) onUpdateTransaction({ ...editingTransaction, ...txData }); else onAddTransaction(txData); onClose(); };
   
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files && e.target.files[0]) { setSelectedFile(e.target.files[0]); setScanError(null); updateScannedTrades([]); } };
-  
   const handleImportFile = async () => { if (!selectedFile) return; setIsScanning(true); setScanError(null); updateScannedTrades([]); try { const data = await selectedFile.arrayBuffer(); const workbook = XLSX.read(data); const worksheet = workbook.Sheets[workbook.SheetNames[0]]; const jsonData = XLSX.utils.sheet_to_json(worksheet); const trades: EditableTrade[] = jsonData.map((row: any) => { const comm = getRowValue(row, ['Commission', 'Comm', 'Brokerage', 'Trading Fee']); const tax = getRowValue(row, ['Tax', 'SST', 'WHT', 'Sales Tax', 'Govt Tax']); const cdc = getRowValue(row, ['CDC Charges', 'CDC', 'CDC Fee', 'Regulatory Fee', 'Reg Fee']); const other = getRowValue(row, ['Other Fees', 'Other', 'FED', 'Service Charges', 'Misc', 'Tax 2']); const price = getRowValue(row, ['Price', 'Rate', 'Exec Price']); const qty = getRowValue(row, ['Quantity', 'Qty', 'Volume']); const type = row['Type'] ? row['Type'].toString().toUpperCase() : 'BUY'; const ticker = row['Ticker'] ? row['Ticker'].toString().toUpperCase() : row['Symbol'] ? row['Symbol'].toString().toUpperCase() : ''; const dateVal = row['Date'] || row['Trade Date']; return { date: normalizeDate(dateVal), type, ticker, broker: row['Broker'], quantity: qty || 0, price: price || 0, commission: comm, tax: tax, cdcCharges: cdc, otherFees: other, brokerId: brokers.find(b => b.name.toLowerCase() === (row['Broker'] || '').toLowerCase())?.id }; }).filter((t: any) => t.ticker && t.quantity > 0 && t.price > 0); if (trades.length === 0) throw new Error("No valid trades found. Please check column headers."); updateScannedTrades(trades); } catch (e: any) { setScanError("Failed to parse file. Ensure it is a valid Excel/CSV."); } finally { setIsScanning(false); } };
   
   const handleProcessScan = async () => { 
@@ -391,7 +392,17 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
       <>
           <div className="grid grid-cols-2 gap-4"> 
               <div><label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Date</label><input required type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-sm dark:text-slate-200 focus:ring-2 focus:ring-emerald-500/20 outline-none dark:color-scheme-dark"/></div> 
-              <div><label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Ticker</label><input required type="text" value={ticker} onChange={e=>setTicker(e.target.value.toUpperCase())} className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-sm font-bold uppercase dark:text-slate-200 focus:ring-2 focus:ring-emerald-500/20 outline-none" placeholder="e.g. OGDC"/></div> 
+              
+              {/* REPLACED STANDARD INPUT WITH TICKERSEARCH */}
+              <div>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Ticker</label>
+                  <TickerSearch 
+                      value={ticker} 
+                      options={allSymbols} 
+                      onChange={setTicker} 
+                      placeholder="e.g. OGDC" 
+                  />
+              </div> 
           </div>
           <div className="mb-1"> 
               <div className="flex justify-between items-center mb-1"> <label className="block text-xs font-bold text-slate-500 dark:text-slate-400">Broker</label> {type === 'BUY' && !editingTransaction && freeCash !== undefined && ( <span className={`text-[10px] font-bold ${freeCash >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}> Buying Power: Rs. {freeCash.toLocaleString()} </span> )} </div> 
