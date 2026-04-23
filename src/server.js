@@ -13,13 +13,13 @@ const port = 3001;
 
 app.use(bodyParser.json({ limit: '10mb' }));
 
-// --- NEW: YOUR PRIVATE VPS PROXY TO BYPASS CORS ---
+// --- 1. VPS PROXY TO BYPASS CORS ---
+// Nginx forwards /api/proxy to /proxy
 app.get('/proxy', async (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).send("No URL provided");
     
     try {
-        // Fetch data directly from PSX via your VPS
         const response = await fetch(targetUrl, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -33,14 +33,14 @@ app.get('/proxy', async (req, res) => {
     }
 });
 
-// 1. Database Connection
+// 2. Database Connection
 const dbPath = path.join(__dirname, 'psx_data.db');
 const db = new Database(dbPath, (err) => {
     if (err) console.error("Database connection error:", err.message);
     else console.log("Database Connected: " + dbPath);
 });
 
-// 2. Initialize Table
+// 3. Initialize Table
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS user_data (
         email TEXT PRIMARY KEY,
@@ -49,7 +49,7 @@ db.serialize(() => {
     )`);
 });
 
-// 3. API: Load Data
+// 4. API: Load Data (Nginx forwards /api/load to /load)
 app.get('/load/:email', (req, res) => {
     db.get("SELECT data FROM user_data WHERE email = ?", [req.params.email], (err, row) => {
         if (err) return res.status(500).json({ success: false, error: err.message });
@@ -57,7 +57,7 @@ app.get('/load/:email', (req, res) => {
     });
 });
 
-// 4. API: Save Data
+// 5. API: Save Data (Nginx forwards /api/save to /save)
 app.post('/save', (req, res) => {
     const { email, data } = req.body;
     if (!email || !data) return res.status(400).json({ success: false, message: "Missing data" });
@@ -70,7 +70,7 @@ app.post('/save', (req, res) => {
     });
 });
 
-// 5. API: Delete Data
+// 6. API: Delete Data (Nginx forwards /api/delete to /delete)
 app.delete('/delete/:email', (req, res) => {
     db.run(`DELETE FROM user_data WHERE email = ?`, [req.params.email], (err) => {
         if (err) return res.status(500).json({ success: false });
