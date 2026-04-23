@@ -38,11 +38,17 @@ const fetchLivePriceData = async (symbol: string): Promise<{ time: number; price
 
 // --- FETCH STOCK HISTORY ---
 export const fetchStockHistory = async (symbol: string, range: TimeRange = '1D'): Promise<{ time: number; price: number }[]> => {
-    const cleanSymbol = symbol.toUpperCase().replace('PSX:', '').trim();
-    if (range === '1D') {
-        const live = await fetchLivePriceData(cleanSymbol);
-        return live ? [live] : [];
+    const symbol = symCell.textContent?.trim().toUpperCase();
+
+if (symbol) {
+    // REMOVE any line that looks like this:
+    // if (!isNaN(Number(symbol))) return; 
+    
+    // ENSURE IT LOOKS LIKE THIS:
+    if (symbol.length >= 1 && !TICKER_BLACKLIST.includes(symbol)) {
+        symbols.add(symbol);
     }
+}
 
     const targetUrl = `https://dps.psx.com.pk/timeseries/eod/${cleanSymbol}`;
     const htmlOrJson = await fetchUrlWithFallback(targetUrl);
