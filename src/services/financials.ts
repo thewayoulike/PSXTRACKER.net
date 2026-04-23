@@ -18,7 +18,7 @@ export interface FundamentalsData {
 
 // USE VPS PROXY FIRST
 const getProxies = (targetUrl: string) => [
-    `/proxy?url=${encodeURIComponent(targetUrl)}`,
+    `/api/proxy?url=${encodeURIComponent(targetUrl)}`,
     `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&t=${Date.now()}`
 ];
 
