@@ -2,8 +2,7 @@
 // Updated to use VPS Database instead of Google Drive
 // Keeps Google Login (for Identity) and Gmail Integration (for OCR)
 
-const HARDCODED_CLIENT_ID = '76622516302-malmubqvj1ms3klfsgr5p6jaom2o7e8s.apps.googleusercontent.com';
-const CLIENT_ID_KEY = 'VITE_GOOGLE_CLIENT_ID';
+const HARDCODED_CLIENT_ID = '738261170592-ohspqfpa3bd4ieefqffe4aj7p2p8qetd.apps.googleusercontent.com';
 
 // LocalStorage Keys for Session Persistence
 const STORAGE_TOKEN_KEY = 'psx_drive_access_token';
