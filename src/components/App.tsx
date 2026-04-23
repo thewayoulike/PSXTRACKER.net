@@ -20,41 +20,21 @@ import { TransferModal } from './TransferModal';
 import { TradingSimulator } from './TradingSimulator';
 import { FairValueCalculator } from './FairValueCalculator';
 import { getSector } from '../services/sectors';
-
-// --- ADDED fetchAllPSXSymbols HERE ---
 import { fetchBatchPSXPrices, setScrapingApiKey, setWebScrapingAIKey, fetchAllPSXSymbols } from '../services/psxData';
 import { setGeminiApiKey } from '../services/gemini';
-import { Edit3, Plus, FolderOpen, Trash2, PlusCircle, X, RefreshCw, Loader2, Coins, LogOut, Save, Briefcase, Key, LayoutDashboard, History, CheckCircle2, Pencil, Layers, ChevronDown, CheckSquare, Square, ChartCandlestick, CalendarClock, ArrowRightLeft, Calculator, TrendingUp } from 'lucide-react'; 
+import { Edit3, Plus, Trash2, PlusCircle, X, RefreshCw, Loader2, Coins, LogOut, Save, Briefcase, Key, LayoutDashboard, History, CheckCircle2, Pencil, Layers, ChevronDown, CheckSquare, Square, ChartCandlestick, CalendarClock, ArrowRightLeft, Calculator, TrendingUp } from 'lucide-react'; 
 import { useIdleTimer } from '../hooks/useIdleTimer'; 
 import { ThemeToggle } from './ui/ThemeToggle'; 
 import * as Popover from '@radix-ui/react-popover'; 
 
 import { 
-    initDriveAuth, 
-    signInWithDrive, 
-    signOutDrive, 
-    saveToDrive, 
-    loadFromDrive, 
-    syncTransactionsToSheet, 
-    getGoogleSheetId, 
-    DriveUser, 
-    hasValidSession,
-    deleteUserData
+    initDriveAuth, signInWithDrive, signOutDrive, saveToDrive, loadFromDrive, 
+    syncTransactionsToSheet, getGoogleSheetId, DriveUser, hasValidSession, deleteUserData 
 } from '../services/driveStorage';
 import { calculateXIRR } from '../utils/finance';
 
 const INITIAL_TRANSACTIONS: Partial<Transaction>[] = [];
-
-const DEFAULT_BROKER: Broker = {
-    id: 'default_01',
-    name: 'Standard Broker',
-    commissionType: 'HIGHER_OF',
-    rate1: 0.15, 
-    rate2: 0.05, 
-    sstRate: 15,
-    isDefault: true
-};
-
+const DEFAULT_BROKER: Broker = { id: 'default_01', name: 'Standard Broker', commissionType: 'HIGHER_OF', rate1: 0.15, rate2: 0.05, sstRate: 15, isDefault: true };
 const DEFAULT_PORTFOLIO: Portfolio = { id: 'default', name: 'Main Portfolio', defaultBrokerId: 'default_01' };
 
 type AppView = 'DASHBOARD' | 'REALIZED' | 'HISTORY' | 'STOCKS' | 'SIMULATOR' | 'CALCULATOR';
@@ -66,104 +46,35 @@ const App: React.FC = () => {
   const [showLogin, setShowLogin] = useState(false);
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [currentView, setCurrentView] = useState<AppView>('DASHBOARD');
-  
   const [viewTicker, setViewTicker] = useState<string | null>(null);
-  
-  // --- ADDED STATE FOR ALL SYMBOLS ---
   const [allSymbols, setAllSymbols] = useState<string[]>([]);
 
   const [brokers, setBrokers] = useState<Broker[]>(() => {
-      try {
-          const saved = localStorage.getItem('psx_brokers');
-          if (saved) {
-              const parsed = JSON.parse(saved);
-              if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-          }
-      } catch (e) { console.error(e); }
-      return [DEFAULT_BROKER];
+      try { const saved = localStorage.getItem('psx_brokers'); if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed) && parsed.length > 0) return parsed; } } catch (e) {} return [DEFAULT_BROKER];
   });
-
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
-      try {
-          const saved = localStorage.getItem('psx_transactions');
-          if (saved) {
-              const parsed = JSON.parse(saved);
-              return parsed.filter((t: Transaction) => !t.id.startsWith('auto-cgt-'));
-          }
-      } catch (e) {}
-      return INITIAL_TRANSACTIONS as Transaction[];
+      try { const saved = localStorage.getItem('psx_transactions'); if (saved) return JSON.parse(saved).filter((t: Transaction) => !t.id.startsWith('auto-cgt-')); } catch (e) {} return INITIAL_TRANSACTIONS as Transaction[];
   });
-
   const [portfolios, setPortfolios] = useState<Portfolio[]>(() => {
-      try {
-          const saved = localStorage.getItem('psx_portfolios');
-          if (saved) return JSON.parse(saved);
-      } catch (e) {}
-      return [DEFAULT_PORTFOLIO];
+      try { const saved = localStorage.getItem('psx_portfolios'); if (saved) return JSON.parse(saved); } catch (e) {} return [DEFAULT_PORTFOLIO];
   });
-
-  const [currentPortfolioId, setCurrentPortfolioId] = useState<string>(() => {
-      return localStorage.getItem('psx_current_portfolio_id') || DEFAULT_PORTFOLIO.id;
-  });
-
-  const [scannerState, setScannerState] = useState<Record<string, FoundDividend[]>>(() => {
-      try {
-          const saved = localStorage.getItem('psx_scanner_state');
-          if (saved) return JSON.parse(saved);
-      } catch (e) {}
-      return {};
-  });
-
-  const [tradeScanResults, setTradeScanResults] = useState<EditableTrade[]>(() => {
-      try {
-          const saved = localStorage.getItem('psx_trade_scan_results');
-          if (saved) return JSON.parse(saved);
-      } catch (e) {}
-      return [];
-  });
+  const [currentPortfolioId, setCurrentPortfolioId] = useState<string>(() => localStorage.getItem('psx_current_portfolio_id') || DEFAULT_PORTFOLIO.id);
+  const [scannerState, setScannerState] = useState<Record<string, FoundDividend[]>>(() => { try { const saved = localStorage.getItem('psx_scanner_state'); if (saved) return JSON.parse(saved); } catch (e) {} return {}; });
+  const [tradeScanResults, setTradeScanResults] = useState<EditableTrade[]>(() => { try { const saved = localStorage.getItem('psx_trade_scan_results'); if (saved) return JSON.parse(saved); } catch (e) {} return []; });
 
   const [isPortfolioModalOpen, setIsPortfolioModalOpen] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [editingPortfolioId, setEditingPortfolioId] = useState<string | null>(null); 
   const [portfolioNameInput, setPortfolioNameInput] = useState('');
   const [portfolioBrokerIdInput, setPortfolioBrokerIdInput] = useState('');
-
   const [isCombinedView, setIsCombinedView] = useState(false);
   const [combinedPortfolioIds, setCombinedPortfolioIds] = useState<Set<string>>(new Set());
 
-  const [manualPrices, setManualPrices] = useState<Record<string, number>>(() => {
-      try {
-          const saved = localStorage.getItem('psx_manual_prices');
-          if (saved) return JSON.parse(saved);
-      } catch (e) {}
-      return {};
-  });
+  const [manualPrices, setManualPrices] = useState<Record<string, number>>(() => { try { const saved = localStorage.getItem('psx_manual_prices'); if (saved) return JSON.parse(saved); } catch (e) {} return {}; });
+  const [ldcpMap, setLdcpMap] = useState<Record<string, number>>(() => { try { const saved = localStorage.getItem('psx_ldcp_map'); if (saved) return JSON.parse(saved); } catch (e) {} return {}; });
+  const [priceTimestamps, setPriceTimestamps] = useState<Record<string, string>>(() => { try { const saved = localStorage.getItem('psx_price_timestamps'); if (saved) return JSON.parse(saved); } catch (e) {} return {}; });
+  const [sectorOverrides, setSectorOverrides] = useState<Record<string, string>>(() => { try { const saved = localStorage.getItem('psx_sector_overrides'); if (saved) return JSON.parse(saved); } catch (e) {} return {}; });
 
-  const [ldcpMap, setLdcpMap] = useState<Record<string, number>>(() => {
-      try {
-          const saved = localStorage.getItem('psx_ldcp_map');
-          if (saved) return JSON.parse(saved);
-      } catch (e) {}
-      return {};
-  });
-
-  const [priceTimestamps, setPriceTimestamps] = useState<Record<string, string>>(() => {
-      try {
-          const saved = localStorage.getItem('psx_price_timestamps');
-          if (saved) return JSON.parse(saved);
-      } catch (e) {}
-      return {};
-  });
-
-  const [sectorOverrides, setSectorOverrides] = useState<Record<string, string>>(() => {
-      try {
-          const saved = localStorage.getItem('psx_sector_overrides');
-          if (saved) return JSON.parse(saved);
-      } catch (e) {}
-      return {};
-  });
-
-  // API KEYS
   const [userApiKey, setUserApiKey] = useState<string>(() => localStorage.getItem('psx_gemini_api_key') || ''); 
   const [userScraperKey, setUserScraperKey] = useState<string>(() => localStorage.getItem('psx_scraping_api_key') || ''); 
   const [userWebScrapingAIKey, setUserWebScrapingAIKey] = useState<string>(() => localStorage.getItem('psx_webscraping_ai_key') || ''); 
@@ -187,194 +98,53 @@ const App: React.FC = () => {
 
   const isReadyToSave = useRef(false);
 
-  const lastPriceUpdate = useMemo(() => {
-      const times = Object.values(priceTimestamps);
-      if (times.length === 0) return null;
-      return times.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
-  }, [priceTimestamps]);
+  const lastPriceUpdate = useMemo(() => { const times = Object.values(priceTimestamps); if (times.length === 0) return null; return times.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]; }, [priceTimestamps]);
+  const sectorMap = useMemo(() => { const map: Record<string, string> = {}; const uTickers = new Set(transactions.map(t => t.ticker)); uTickers.forEach(t => { map[t] = sectorOverrides[t] || getSector(t); }); return map; }, [transactions, sectorOverrides]);
 
-  const sectorMap = useMemo(() => {
-      const map: Record<string, string> = {};
-      const allTickers = new Set(transactions.map(t => t.ticker));
-      allTickers.forEach(t => {
-          map[t] = sectorOverrides[t] || getSector(t);
-      });
-      return map;
-  }, [transactions, sectorOverrides]);
+  const performLogout = useCallback(() => { setTransactions([]); setPortfolios([DEFAULT_PORTFOLIO]); setHoldings([]); setRealizedTrades([]); setManualPrices({}); setLdcpMap({}); setPriceTimestamps({}); setSectorOverrides({}); setBrokers([DEFAULT_BROKER]); setScannerState({}); setTradeScanResults([]); setUserApiKey(''); setUserScraperKey(''); setUserWebScrapingAIKey(''); setGeminiApiKey(null); setScrapingApiKey(null); setWebScrapingAIKey(null); setDriveUser(null); setGoogleSheetId(null); localStorage.clear(); signOutDrive(); isReadyToSave.current = false; }, []);
 
-  const performLogout = useCallback(() => {
-      setTransactions([]); setPortfolios([DEFAULT_PORTFOLIO]); setHoldings([]); setRealizedTrades([]); 
-      setManualPrices({}); setLdcpMap({}); setPriceTimestamps({}); setSectorOverrides({}); setBrokers([DEFAULT_BROKER]); setScannerState({}); setTradeScanResults([]);
-      setUserApiKey(''); setUserScraperKey(''); setUserWebScrapingAIKey('');
-      setGeminiApiKey(null); setScrapingApiKey(null); setWebScrapingAIKey(null);
-      setDriveUser(null); setGoogleSheetId(null); localStorage.clear(); signOutDrive();
-      isReadyToSave.current = false;
-  }, []);
-
-  useIdleTimer(1800000, () => {
-      if (transactions.length > 0 || driveUser) { performLogout(); alert("Session timed out due to inactivity. Data cleared for security."); }
-  });
+  useIdleTimer(1800000, () => { if (transactions.length > 0 || driveUser) { performLogout(); alert("Session timed out due to inactivity. Data cleared for security."); } });
 
   const handleManualLogout = () => { if (window.confirm("Logout and clear local data?")) { performLogout(); } };
-  
-  const handleWipeData = async () => {
-      if (!driveUser) return;
-      const confirmed = window.confirm("⚠️ DANGER: This will permanently delete ALL your portfolio data and history from our servers. This cannot be undone. Proceed?");
-      if (confirmed) {
-          const success = await deleteUserData(driveUser.email);
-          if (success) {
-              alert("Your account data has been completely wiped.");
-              performLogout();
-          } else {
-              alert("Failed to wipe data. Please try again later.");
-          }
-      }
-  };
-
+  const handleWipeData = async () => { if (!driveUser) return; const confirmed = window.confirm("⚠️ DANGER: This will permanently delete ALL your portfolio data and history from our servers. This cannot be undone. Proceed?"); if (confirmed) { const success = await deleteUserData(driveUser.email); if (success) { alert("Your account data has been completely wiped."); performLogout(); } else { alert("Failed to wipe data. Please try again later."); } } };
   const handleLogin = () => signInWithDrive();
 
-  useEffect(() => {
-      if (userApiKey) setGeminiApiKey(userApiKey);
-      if (userScraperKey) setScrapingApiKey(userScraperKey);
-      if (userWebScrapingAIKey) setWebScrapingAIKey(userWebScrapingAIKey);
-  }, [userApiKey, userScraperKey, userWebScrapingAIKey]);
+  useEffect(() => { if (userApiKey) setGeminiApiKey(userApiKey); if (userScraperKey) setScrapingApiKey(userScraperKey); if (userWebScrapingAIKey) setWebScrapingAIKey(userWebScrapingAIKey); }, [userApiKey, userScraperKey, userWebScrapingAIKey]);
+  useEffect(() => { if (isCombinedView && combinedPortfolioIds.size === 0 && portfolios.length > 0) { setCombinedPortfolioIds(new Set(portfolios.map(p => p.id))); } }, [isCombinedView, portfolios, combinedPortfolioIds.size]);
 
-  useEffect(() => {
-      if (isCombinedView && combinedPortfolioIds.size === 0 && portfolios.length > 0) {
-          setCombinedPortfolioIds(new Set(portfolios.map(p => p.id)));
-      }
-  }, [isCombinedView, portfolios, combinedPortfolioIds.size]);
-
-  // --- FETCH ALL SYMBOLS ON MOUNT ---
-  useEffect(() => {
-      fetchAllPSXSymbols().then(symbols => {
-          if (symbols && symbols.length > 0) setAllSymbols(symbols);
-      });
-  }, []);
+  useEffect(() => { fetchAllPSXSymbols().then(symbols => { if (symbols && symbols.length > 0) setAllSymbols(symbols); }); }, []);
 
   useEffect(() => {
       initDriveAuth(async (user) => {
-          setDriveUser(user);
-          setIsAuthChecking(false);
-          setShowLogin(false);
-          
-          getGoogleSheetId().then(id => setGoogleSheetId(id));
-
-          setIsCloudSyncing(true);
+          setDriveUser(user); setIsAuthChecking(false); setShowLogin(false); getGoogleSheetId().then(id => setGoogleSheetId(id)); setIsCloudSyncing(true);
           try {
               const cloudData = await loadFromDrive();
               if (cloudData) {
                   if (cloudData.portfolios) setPortfolios(cloudData.portfolios);
-                  if (cloudData.transactions) {
-                      const cleanTx = (cloudData.transactions as Transaction[]).filter(t => !t.id.startsWith('auto-cgt-'));
-                      setTransactions(cleanTx);
-                  }
-                  if (cloudData.manualPrices) setManualPrices(cloudData.manualPrices);
-                  if (cloudData.ldcpMap) setLdcpMap(cloudData.ldcpMap); 
-                  if (cloudData.priceTimestamps) setPriceTimestamps(cloudData.priceTimestamps);
-                  if (cloudData.currentPortfolioId) setCurrentPortfolioId(cloudData.currentPortfolioId);
-                  if (cloudData.sectorOverrides) setSectorOverrides(prev => ({ ...prev, ...cloudData.sectorOverrides }));
+                  if (cloudData.transactions) { const cleanTx = (cloudData.transactions as Transaction[]).filter(t => !t.id.startsWith('auto-cgt-')); setTransactions(cleanTx); }
+                  if (cloudData.manualPrices) setManualPrices(cloudData.manualPrices); if (cloudData.ldcpMap) setLdcpMap(cloudData.ldcpMap); if (cloudData.priceTimestamps) setPriceTimestamps(cloudData.priceTimestamps);
+                  if (cloudData.currentPortfolioId) setCurrentPortfolioId(cloudData.currentPortfolioId); if (cloudData.sectorOverrides) setSectorOverrides(prev => ({ ...prev, ...cloudData.sectorOverrides }));
                   if (cloudData.scannerState) setScannerState(cloudData.scannerState); 
-                  
-                  if (cloudData.brokers && Array.isArray(cloudData.brokers) && cloudData.brokers.length > 0) {
-                      setBrokers(cloudData.brokers);
-                      localStorage.setItem('psx_brokers', JSON.stringify(cloudData.brokers));
-                  }
-                  
-                  if (cloudData.geminiApiKey) {
-                      setUserApiKey(cloudData.geminiApiKey);
-                      setGeminiApiKey(cloudData.geminiApiKey); 
-                      localStorage.setItem('psx_gemini_api_key', cloudData.geminiApiKey);
-                  }
-                  if (cloudData.scrapingApiKey) {
-                      setUserScraperKey(cloudData.scrapingApiKey);
-                      setScrapingApiKey(cloudData.scrapingApiKey);
-                      localStorage.setItem('psx_scraping_api_key', cloudData.scrapingApiKey);
-                  }
-                  if (cloudData.webScrapingAIKey) {
-                      setUserWebScrapingAIKey(cloudData.webScrapingAIKey);
-                      setWebScrapingAIKey(cloudData.webScrapingAIKey);
-                      localStorage.setItem('psx_webscraping_ai_key', cloudData.webScrapingAIKey);
-                  }
+                  if (cloudData.brokers && Array.isArray(cloudData.brokers) && cloudData.brokers.length > 0) { setBrokers(cloudData.brokers); localStorage.setItem('psx_brokers', JSON.stringify(cloudData.brokers)); }
+                  if (cloudData.geminiApiKey) { setUserApiKey(cloudData.geminiApiKey); setGeminiApiKey(cloudData.geminiApiKey); localStorage.setItem('psx_gemini_api_key', cloudData.geminiApiKey); }
+                  if (cloudData.scrapingApiKey) { setUserScraperKey(cloudData.scrapingApiKey); setScrapingApiKey(cloudData.scrapingApiKey); localStorage.setItem('psx_scraping_api_key', cloudData.scrapingApiKey); }
+                  if (cloudData.webScrapingAIKey) { setUserWebScrapingAIKey(cloudData.webScrapingAIKey); setWebScrapingAIKey(cloudData.webScrapingAIKey); localStorage.setItem('psx_webscraping_ai_key', cloudData.webScrapingAIKey); }
               }
-          } catch (e) { 
-              console.error("Drive Load Error", e); 
-          } finally { 
-              setIsCloudSyncing(false); 
-              isReadyToSave.current = true;
-          }
+          } catch (e) { console.error("Drive Load Error", e); } finally { setIsCloudSyncing(false); isReadyToSave.current = true; }
       });
       if (!hasValidSession()) { setIsAuthChecking(false); setShowLogin(true); }
   }, []);
 
   const handleSaveApiKey = (geminiKey: string, scraperKey: string, webAIKey: string) => { 
-      setUserApiKey(geminiKey); setUserScraperKey(scraperKey); setUserWebScrapingAIKey(webAIKey);
-      setGeminiApiKey(geminiKey); setScrapingApiKey(scraperKey); setWebScrapingAIKey(webAIKey);
-      localStorage.setItem('psx_gemini_api_key', geminiKey);
-      localStorage.setItem('psx_scraping_api_key', scraperKey);
-      localStorage.setItem('psx_webscraping_ai_key', webAIKey);
-      if (driveUser) {
-          saveToDrive({ 
-              transactions, portfolios, currentPortfolioId, manualPrices, ldcpMap, priceTimestamps, brokers, 
-              sectorOverrides, scannerState, geminiApiKey: geminiKey, scrapingApiKey: scraperKey, webScrapingAIKey: webAIKey
-          }); 
-      }
+      setUserApiKey(geminiKey); setUserScraperKey(scraperKey); setUserWebScrapingAIKey(webAIKey); setGeminiApiKey(geminiKey); setScrapingApiKey(scraperKey); setWebScrapingAIKey(webAIKey); localStorage.setItem('psx_gemini_api_key', geminiKey); localStorage.setItem('psx_scraping_api_key', scraperKey); localStorage.setItem('psx_webscraping_ai_key', webAIKey);
+      if (driveUser) { saveToDrive({ transactions, portfolios, currentPortfolioId, manualPrices, ldcpMap, priceTimestamps, brokers, sectorOverrides, scannerState, geminiApiKey: geminiKey, scrapingApiKey: scraperKey, webScrapingAIKey: webAIKey }); }
   };
   
   const handleAddBroker = (newBroker: Omit<Broker, 'id'>) => { const id = Date.now().toString(); const updatedBrokers = [...brokers, { ...newBroker, id }]; setBrokers(updatedBrokers); };
   const handleUpdateBroker = (updated: Broker) => { const updatedBrokers = brokers.map(b => b.id === updated.id ? updated : b); setBrokers(updatedBrokers); };
   const handleDeleteBroker = (id: string) => { if (window.confirm("Delete this broker?")) { const updatedBrokers = brokers.filter(b => b.id !== id); setBrokers(updatedBrokers); } };
-  
-  const handleAddTransaction = (txData: Omit<Transaction, 'id' | 'portfolioId'>) => { 
-      const currentPortfolio = portfolios.find(p => p.id === currentPortfolioId);
-      if (!currentPortfolio) return;
-      const brokerToUse = brokers.find(b => b.id === currentPortfolio.defaultBrokerId);
-      const newId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Date.now().toString(); 
-      const newTx: Transaction = { ...txData, id: newId, portfolioId: currentPortfolioId, brokerId: currentPortfolio.defaultBrokerId, broker: brokerToUse?.name || 'Unknown' }; 
-      setTransactions(prev => [...prev, newTx]); 
-  };
-
-  const handleTransferStock = (ticker: string, quantity: number, destPortfolioId: string, date: string) => {
-      const sourcePortfolio = portfolios.find(p => p.id === currentPortfolioId);
-      const destPortfolio = portfolios.find(p => p.id === destPortfolioId);
-      const holding = holdings.find(h => h.ticker === ticker);
-      
-      if (!sourcePortfolio || !destPortfolio || !holding) return;
-
-      const transferPrice = holding.avgPrice;
-      const transferId = Date.now().toString();
-
-      const transferOut: Transaction = {
-          id: `tx-out-${transferId}`,
-          portfolioId: currentPortfolioId,
-          type: 'TRANSFER_OUT',
-          ticker,
-          quantity,
-          price: transferPrice,
-          date,
-          broker: sourcePortfolio.defaultBrokerId ? (brokers.find(b => b.id === sourcePortfolio.defaultBrokerId)?.name) : 'Transfer',
-          brokerId: sourcePortfolio.defaultBrokerId,
-          commission: 0, tax: 0, cdcCharges: 0, otherFees: 0,
-          notes: `Transfer to ${destPortfolio.name}`
-      };
-
-      const transferIn: Transaction = {
-          id: `tx-in-${transferId}`,
-          portfolioId: destPortfolioId,
-          type: 'TRANSFER_IN',
-          ticker,
-          quantity,
-          price: transferPrice,
-          date,
-          broker: destPortfolio.defaultBrokerId ? (brokers.find(b => b.id === destPortfolio.defaultBrokerId)?.name) : 'Transfer',
-          brokerId: destPortfolio.defaultBrokerId,
-          commission: 0, tax: 0, cdcCharges: 0, otherFees: 0,
-          notes: `Transfer from ${sourcePortfolio.name}`
-      };
-
-      setTransactions(prev => [...prev, transferOut, transferIn]);
-  };
-
+  const handleAddTransaction = (txData: Omit<Transaction, 'id' | 'portfolioId'>) => { const currentPortfolio = portfolios.find(p => p.id === currentPortfolioId); if (!currentPortfolio) return; const brokerToUse = brokers.find(b => b.id === currentPortfolio.defaultBrokerId); const newId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Date.now().toString(); const newTx: Transaction = { ...txData, id: newId, portfolioId: currentPortfolioId, brokerId: currentPortfolio.defaultBrokerId, broker: brokerToUse?.name || 'Unknown' }; setTransactions(prev => [...prev, newTx]); };
+  const handleTransferStock = (ticker: string, quantity: number, destPortfolioId: string, date: string) => { const sourcePortfolio = portfolios.find(p => p.id === currentPortfolioId); const destPortfolio = portfolios.find(p => p.id === destPortfolioId); const holding = holdings.find(h => h.ticker === ticker); if (!sourcePortfolio || !destPortfolio || !holding) return; const transferPrice = holding.avgPrice; const transferId = Date.now().toString(); const transferOut: Transaction = { id: `tx-out-${transferId}`, portfolioId: currentPortfolioId, type: 'TRANSFER_OUT', ticker, quantity, price: transferPrice, date, broker: sourcePortfolio.defaultBrokerId ? (brokers.find(b => b.id === sourcePortfolio.defaultBrokerId)?.name) : 'Transfer', brokerId: sourcePortfolio.defaultBrokerId, commission: 0, tax: 0, cdcCharges: 0, otherFees: 0, notes: `Transfer to ${destPortfolio.name}` }; const transferIn: Transaction = { id: `tx-in-${transferId}`, portfolioId: destPortfolioId, type: 'TRANSFER_IN', ticker, quantity, price: transferPrice, date, broker: destPortfolio.defaultBrokerId ? (brokers.find(b => b.id === destPortfolio.defaultBrokerId)?.name) : 'Transfer', brokerId: destPortfolio.defaultBrokerId, commission: 0, tax: 0, cdcCharges: 0, otherFees: 0, notes: `Transfer from ${sourcePortfolio.name}` }; setTransactions(prev => [...prev, transferOut, transferIn]); };
   const handleUpdateTransaction = (updatedTx: Transaction) => { setTransactions(prev => prev.map(t => t.id === updatedTx.id ? updatedTx : t)); setEditingTransaction(null); };
   const handleDeleteTransaction = (id: string) => { if (window.confirm("Are you sure you want to delete this transaction?")) { setTransactions(prev => prev.filter(t => t.id !== id)); } };
   const handleDeleteTransactions = (ids: string[]) => { if (window.confirm(`Are you sure you want to delete ${ids.length} selected transactions?`)) { setTransactions(prev => prev.filter(t => !ids.includes(t.id))); } };
@@ -382,13 +152,10 @@ const App: React.FC = () => {
   const handleUpdatePrices = (newPrices: Record<string, number>) => { setManualPrices(prev => ({ ...prev, ...newPrices })); const now = new Date().toISOString(); const newTimestamps: Record<string, string> = {}; Object.keys(newPrices).forEach(k => newTimestamps[k] = now); setPriceTimestamps(prev => ({ ...prev, ...newTimestamps })); };
   const handleScannerUpdate = (results: FoundDividend[]) => { setScannerState(prev => ({ ...prev, [currentPortfolioId]: results })); };
   const handleUpdateTradeScanResults = (results: EditableTrade[]) => { setTradeScanResults(results); };
-
   const openCreatePortfolioModal = () => { setEditingPortfolioId(null); setPortfolioNameInput(''); setPortfolioBrokerIdInput(''); setIsPortfolioModalOpen(true); };
   const openEditPortfolioModal = () => { const current = portfolios.find(p => p.id === currentPortfolioId); if (current) { setEditingPortfolioId(current.id); setPortfolioNameInput(current.name); setPortfolioBrokerIdInput(current.defaultBrokerId); setIsPortfolioModalOpen(true); } };
-
-  const handleSavePortfolio = (e: React.FormEvent) => { e.preventDefault(); if (!portfolioNameInput.trim()) { alert("Portfolio Name is required"); return; } if (!portfolioBrokerIdInput) { alert("A Default Broker is required for every portfolio."); return; } if (editingPortfolioId) { setPortfolios(prev => prev.map(p => p.id === editingPortfolioId ? { ...p, name: portfolioNameInput.trim(), defaultBrokerId: portfolioBrokerIdInput } : p)); } else { const newId = Date.now().toString(); setPortfolios(prev => [...prev, { id: newId, name: portfolioNameInput.trim(), defaultBrokerId: portfolioBrokerIdInput }]); setCurrentPortfolioId(newId); } setPortfolioNameInput(''); setPortfolioBrokerIdInput(''); setEditingPortfolioId(null); setIsPortfolioModalOpen(false); };
+  const handleSavePortfolio = (e: React.FormEvent) => { e.preventDefault(); if (!portfolioNameInput.trim() || !portfolioBrokerIdInput) return; if (editingPortfolioId) { setPortfolios(prev => prev.map(p => p.id === editingPortfolioId ? { ...p, name: portfolioNameInput.trim(), defaultBrokerId: portfolioBrokerIdInput } : p)); } else { const newId = Date.now().toString(); setPortfolios(prev => [...prev, { id: newId, name: portfolioNameInput.trim(), defaultBrokerId: portfolioBrokerIdInput }]); setCurrentPortfolioId(newId); } setPortfolioNameInput(''); setPortfolioBrokerIdInput(''); setEditingPortfolioId(null); setIsPortfolioModalOpen(false); };
   const handleDeletePortfolio = () => { if (portfolios.length === 1) return alert("You cannot delete the last portfolio."); if (window.confirm("Are you sure? This will delete ALL transactions in this portfolio.")) { const idToDelete = currentPortfolioId; setCurrentPortfolioId(portfolios.find(p => p.id !== idToDelete)?.id || portfolios[0].id); setPortfolios(prev => prev.filter(p => p.id !== idToDelete)); setTransactions(prev => prev.filter(t => t.portfolioId !== idToDelete)); setScannerState(prev => { const newState = { ...prev }; delete newState[idToDelete]; return newState; }); setIsPortfolioModalOpen(false); } };
-  
   const handleTogglePortfolioSelection = (id: string) => { const newSet = new Set(combinedPortfolioIds); if (newSet.has(id)) { if (newSet.size > 1) newSet.delete(id); } else { newSet.add(id); } setCombinedPortfolioIds(newSet); };
   const handleSelectAllPortfolios = () => { setCombinedPortfolioIds(new Set(portfolios.map(p => p.id))); };
 
@@ -397,255 +164,68 @@ const App: React.FC = () => {
   useEffect(() => { if (brokers.length === 0) return; const generateFees = () => { let newTransactions: Transaction[] = []; brokers.forEach(broker => { if (!broker.annualFee || !broker.feeStartDate || broker.annualFee <= 0) return; let nextDueDate = new Date(broker.feeStartDate); nextDueDate.setFullYear(nextDueDate.getFullYear() + 1); const today = new Date(); while (nextDueDate <= today) { const feeYear = nextDueDate.getFullYear(); const txId = `auto-fee-${broker.id}-${feeYear}`; const exists = transactions.some(t => t.id === txId); if (!exists) { const feeDateStr = nextDueDate.toISOString().split('T')[0]; const newTx: Transaction = { id: txId, portfolioId: currentPortfolioId, ticker: 'ANNUAL FEE', type: 'ANNUAL_FEE', quantity: 1, price: broker.annualFee, date: feeDateStr, broker: broker.name, brokerId: broker.id, commission: 0, tax: 0, cdcCharges: 0, otherFees: 0, notes: `Annual Broker Fee (${feeYear})` }; newTransactions.push(newTx); } nextDueDate.setFullYear(nextDueDate.getFullYear() + 1); } }); if (newTransactions.length > 0) { setTransactions(prev => [...prev, ...newTransactions]); } }; generateFees(); }, [brokers, currentPortfolioId]); 
   useEffect(() => { if (portfolios.length > 0 && !portfolios.find(p => p.id === currentPortfolioId)) { setCurrentPortfolioId(portfolios[0].id); } }, [portfolios, currentPortfolioId]);
   
-  const portfolioTransactions = useMemo(() => { 
-      if (isCombinedView) return transactions.filter(t => combinedPortfolioIds.has(t.portfolioId));
-      return transactions.filter(t => t.portfolioId === currentPortfolioId); 
-  }, [transactions, currentPortfolioId, isCombinedView, combinedPortfolioIds]);
+  const portfolioTransactions = useMemo(() => { if (isCombinedView) return transactions.filter(t => combinedPortfolioIds.has(t.portfolioId)); return transactions.filter(t => t.portfolioId === currentPortfolioId); }, [transactions, currentPortfolioId, isCombinedView, combinedPortfolioIds]);
 
   const stats: PortfolioStats = useMemo(() => {
-    let totalValue = 0; let totalCost = 0; let totalCommission = 0; let totalSalesTax = 0; let dividendSum = 0; let divTaxSum = 0; let totalCDC = 0; let totalOtherFees = 0; let totalCGT = 0; let totalDeposits = 0; let totalWithdrawals = 0; let historyPnL = 0;
-    let operationalExpenses = 0; 
-    let dailyPL = 0;
-    let totalAdjustments = 0; 
-
-    holdings.forEach(h => { 
-        totalValue += h.quantity * h.currentPrice; 
-        const roundedAvg = Math.round(h.avgPrice * 100) / 100;
-        totalCost += h.quantity * roundedAvg;
-        const ldcp = ldcpMap[h.ticker] || h.currentPrice;
-        dailyPL += (h.currentPrice - ldcp) * h.quantity;
-    });
-    
+    let totalValue = 0; let totalCost = 0; let totalCommission = 0; let totalSalesTax = 0; let dividendSum = 0; let divTaxSum = 0; let totalCDC = 0; let totalOtherFees = 0; let totalCGT = 0; let totalDeposits = 0; let totalWithdrawals = 0; let historyPnL = 0; let operationalExpenses = 0; let dailyPL = 0; let totalAdjustments = 0; 
+    holdings.forEach(h => { totalValue += h.quantity * h.currentPrice; const roundedAvg = Math.round(h.avgPrice * 100) / 100; totalCost += h.quantity * roundedAvg; const ldcp = ldcpMap[h.ticker] || h.currentPrice; dailyPL += (h.currentPrice - ldcp) * h.quantity; });
     let realizedPL = realizedTrades.reduce((sum, t) => sum + t.profit, 0);
-    
     const events: { date: string, type: 'IN' | 'OUT' | 'PROFIT' | 'LOSS', amount: number, originalIndex: number }[] = [];
-    const txIndexMap = new Map<string, number>();
-    portfolioTransactions.forEach((t, idx) => txIndexMap.set(t.id, idx));
-
+    const txIndexMap = new Map<string, number>(); portfolioTransactions.forEach((t, idx) => txIndexMap.set(t.id, idx));
     portfolioTransactions.forEach((t, idx) => {
         totalCommission += (t.commission || 0); totalCDC += (t.cdcCharges || 0); totalOtherFees += (t.otherFees || 0);
-        
-        if (t.type === 'DEPOSIT') {
-            totalDeposits += t.price;
-            events.push({ date: t.date, type: 'IN', amount: t.price, originalIndex: idx });
-        } 
-        else if (t.type === 'WITHDRAWAL') {
-            totalWithdrawals += t.price;
-            events.push({ date: t.date, type: 'OUT', amount: t.price, originalIndex: idx }); 
-        }
-        else if (t.type === 'ANNUAL_FEE') {
-            operationalExpenses += t.price;
-            events.push({ date: t.date, type: 'LOSS', amount: t.price, originalIndex: idx });
-        }
-        else if (t.type === 'OTHER') {
-            if (t.category === 'OTHER_TAX' || t.category === 'CDC_CHARGE') {
-                operationalExpenses += Math.abs(t.price);
-                if (t.category === 'CDC_CHARGE') totalCDC += Math.abs(t.price);
-                events.push({ date: t.date, type: 'LOSS', amount: Math.abs(t.price), originalIndex: idx });
-            } else {
-                totalAdjustments += t.price; 
-                if (t.price >= 0) {
-                    events.push({ date: t.date, type: 'PROFIT', amount: t.price, originalIndex: idx });
-                } else {
-                    events.push({ date: t.date, type: 'LOSS', amount: Math.abs(t.price), originalIndex: idx });
-                }
-            }
-        }
-        else if (t.type === 'DIVIDEND') { 
-            const netDiv = (t.quantity * t.price) - (t.tax || 0);
-            dividendSum += netDiv;
-            divTaxSum += (t.tax || 0);
-            if (netDiv >= 0) events.push({ date: t.date, type: 'PROFIT', amount: netDiv, originalIndex: idx });
-        }
-        else if (t.type === 'TAX') { 
-            totalCGT += t.price; 
-            events.push({ date: t.date, type: 'LOSS', amount: t.price, originalIndex: idx });
-        } 
-        else if (t.type === 'HISTORY') { 
-            totalCGT += (t.tax || 0); 
-            historyPnL += t.price; 
-            
-            if (t.price >= 0) events.push({ date: t.date, type: 'PROFIT', amount: t.price, originalIndex: idx });
-            else events.push({ date: t.date, type: 'LOSS', amount: Math.abs(t.price), originalIndex: idx });
-        }
-        else if (t.type === 'TRANSFER_IN') {
-            events.push({ date: t.date, type: 'IN', amount: t.price * t.quantity, originalIndex: idx });
-        }
-        else if (t.type === 'TRANSFER_OUT') {
-            events.push({ date: t.date, type: 'OUT', amount: t.price * t.quantity, originalIndex: idx });
-        }
-        else { 
-            totalSalesTax += (t.tax || 0); 
-        }
+        if (t.type === 'DEPOSIT') { totalDeposits += t.price; events.push({ date: t.date, type: 'IN', amount: t.price, originalIndex: idx }); } 
+        else if (t.type === 'WITHDRAWAL') { totalWithdrawals += t.price; events.push({ date: t.date, type: 'OUT', amount: t.price, originalIndex: idx }); }
+        else if (t.type === 'ANNUAL_FEE') { operationalExpenses += t.price; events.push({ date: t.date, type: 'LOSS', amount: t.price, originalIndex: idx }); }
+        else if (t.type === 'OTHER') { if (t.category === 'OTHER_TAX' || t.category === 'CDC_CHARGE') { operationalExpenses += Math.abs(t.price); if (t.category === 'CDC_CHARGE') totalCDC += Math.abs(t.price); events.push({ date: t.date, type: 'LOSS', amount: Math.abs(t.price), originalIndex: idx }); } else { totalAdjustments += t.price; if (t.price >= 0) { events.push({ date: t.date, type: 'PROFIT', amount: t.price, originalIndex: idx }); } else { events.push({ date: t.date, type: 'LOSS', amount: Math.abs(t.price), originalIndex: idx }); } } }
+        else if (t.type === 'DIVIDEND') { const netDiv = (t.quantity * t.price) - (t.tax || 0); dividendSum += netDiv; divTaxSum += (t.tax || 0); if (netDiv >= 0) events.push({ date: t.date, type: 'PROFIT', amount: netDiv, originalIndex: idx }); }
+        else if (t.type === 'TAX') { totalCGT += t.price; events.push({ date: t.date, type: 'LOSS', amount: t.price, originalIndex: idx }); } 
+        else if (t.type === 'HISTORY') { totalCGT += (t.tax || 0); historyPnL += t.price; if (t.price >= 0) events.push({ date: t.date, type: 'PROFIT', amount: t.price, originalIndex: idx }); else events.push({ date: t.date, type: 'LOSS', amount: Math.abs(t.price), originalIndex: idx }); }
+        else if (t.type === 'TRANSFER_IN') { events.push({ date: t.date, type: 'IN', amount: t.price * t.quantity, originalIndex: idx }); }
+        else if (t.type === 'TRANSFER_OUT') { events.push({ date: t.date, type: 'OUT', amount: t.price * t.quantity, originalIndex: idx }); }
+        else { totalSalesTax += (t.tax || 0); }
     });
-    
-    realizedTrades.forEach((t) => {
-        const originalIdx = txIndexMap.get(t.id) ?? 999999; 
-        if (t.profit >= 0) events.push({ date: t.date, type: 'PROFIT', amount: t.profit, originalIndex: originalIdx });
-        else events.push({ date: t.date, type: 'LOSS', amount: Math.abs(t.profit), originalIndex: originalIdx });
-    });
-
-    events.sort((a, b) => {
-        const dateDiff = a.date.localeCompare(b.date);
-        if (dateDiff !== 0) return dateDiff;
-        return a.originalIndex - b.originalIndex;
-    });
-
+    realizedTrades.forEach((t) => { const originalIdx = txIndexMap.get(t.id) ?? 999999; if (t.profit >= 0) events.push({ date: t.date, type: 'PROFIT', amount: t.profit, originalIndex: originalIdx }); else events.push({ date: t.date, type: 'LOSS', amount: Math.abs(t.profit), originalIndex: originalIdx }); });
+    events.sort((a, b) => { const dateDiff = a.date.localeCompare(b.date); if (dateDiff !== 0) return dateDiff; return a.originalIndex - b.originalIndex; });
     const netRealizedPL = realizedPL - totalCGT; 
-
-    let currentInvested = 0;
-    let peakInvested = 0;
-
-    events.forEach(e => {
-        if (e.type === 'IN') { 
-            currentInvested += e.amount;
-            if (currentInvested > peakInvested) peakInvested = currentInvested;
-        }
-        else if (e.type === 'OUT') { 
-            currentInvested -= e.amount;
-        }
-    });
-
-    const netPrincipal = Math.max(0, currentInvested); 
-    const peakNetPrincipal = peakInvested; 
-
-    let tradingCashFlow = 0; 
-    portfolioTransactions.forEach(t => { 
-        const val = t.price * t.quantity; 
-        const fees = (t.commission||0) + (t.tax||0) + (t.cdcCharges||0) + (t.otherFees||0); 
-        if (t.type === 'BUY') tradingCashFlow -= (val + fees); 
-        else if (t.type === 'SELL') tradingCashFlow += (val - fees); 
-    });
-    
-    let cashIn = totalDeposits; 
-    let cashOut = totalWithdrawals + totalCGT + operationalExpenses; 
-    const freeCash = cashIn - cashOut + tradingCashFlow + historyPnL + totalAdjustments; 
-    
+    let currentInvested = 0; let peakInvested = 0;
+    events.forEach(e => { if (e.type === 'IN') { currentInvested += e.amount; if (currentInvested > peakInvested) peakInvested = currentInvested; } else if (e.type === 'OUT') { currentInvested -= e.amount; } });
+    const netPrincipal = Math.max(0, currentInvested); const peakNetPrincipal = peakInvested; 
+    let tradingCashFlow = 0; portfolioTransactions.forEach(t => { const val = t.price * t.quantity; const fees = (t.commission||0) + (t.tax||0) + (t.cdcCharges||0) + (t.otherFees||0); if (t.type === 'BUY') tradingCashFlow -= (val + fees); else if (t.type === 'SELL') tradingCashFlow += (val - fees); });
+    let cashIn = totalDeposits; let cashOut = totalWithdrawals + totalCGT + operationalExpenses; const freeCash = cashIn - cashOut + tradingCashFlow + historyPnL + totalAdjustments; 
     const totalNetReturn = netRealizedPL + (totalValue - totalCost) + dividendSum - operationalExpenses + totalAdjustments;
-    
-    const roiDenominator = netPrincipal > 0 ? netPrincipal : (peakNetPrincipal > 0 ? peakNetPrincipal : 1);
-    const roi = (totalNetReturn / roiDenominator) * 100;
-    
-    const unrealizedPL = totalValue - totalCost;
-    const unrealizedPLPercent = totalCost > 0 ? (unrealizedPL / totalCost) * 100 : 0;
-
+    const roiDenominator = netPrincipal > 0 ? netPrincipal : (peakNetPrincipal > 0 ? peakNetPrincipal : 1); const roi = (totalNetReturn / roiDenominator) * 100;
+    const unrealizedPL = totalValue - totalCost; const unrealizedPLPercent = totalCost > 0 ? (unrealizedPL / totalCost) * 100 : 0;
     const cashFlowsForXIRR: { amount: number, date: Date }[] = [];
-    portfolioTransactions.forEach(t => {
-        if (t.type === 'DEPOSIT') {
-             cashFlowsForXIRR.push({ amount: -Math.abs(t.price), date: new Date(t.date) });
-        } else if (t.type === 'WITHDRAWAL') {
-             cashFlowsForXIRR.push({ amount: Math.abs(t.price), date: new Date(t.date) });
-        } else if (t.type === 'TRANSFER_IN') {
-             cashFlowsForXIRR.push({ amount: -Math.abs(t.price * t.quantity), date: new Date(t.date) });
-        } else if (t.type === 'TRANSFER_OUT') {
-             cashFlowsForXIRR.push({ amount: Math.abs(t.price * t.quantity), date: new Date(t.date) });
-        }
-    });
-    const currentTotalNetWorth = totalValue + freeCash;
-    if (currentTotalNetWorth > 0) {
-        cashFlowsForXIRR.push({ amount: currentTotalNetWorth, date: new Date() });
-    }
+    portfolioTransactions.forEach(t => { if (t.type === 'DEPOSIT') { cashFlowsForXIRR.push({ amount: -Math.abs(t.price), date: new Date(t.date) }); } else if (t.type === 'WITHDRAWAL') { cashFlowsForXIRR.push({ amount: Math.abs(t.price), date: new Date(t.date) }); } else if (t.type === 'TRANSFER_IN') { cashFlowsForXIRR.push({ amount: -Math.abs(t.price * t.quantity), date: new Date(t.date) }); } else if (t.type === 'TRANSFER_OUT') { cashFlowsForXIRR.push({ amount: Math.abs(t.price * t.quantity), date: new Date(t.date) }); } });
+    const currentTotalNetWorth = totalValue + freeCash; if (currentTotalNetWorth > 0) { cashFlowsForXIRR.push({ amount: currentTotalNetWorth, date: new Date() }); }
     const mwrr = calculateXIRR(cashFlowsForXIRR);
-    
-    const yesterdayValue = totalValue - dailyPL;
-    const dailyPLPercent = yesterdayValue > 0 ? (dailyPL / yesterdayValue) * 100 : 0;
-    const reinvestedProfits = Math.max(0, totalCost - Math.max(0, netPrincipal));
-
-    if (dividendSum !== totalDividends) setTotalDividends(dividendSum);
-    if (divTaxSum !== totalDividendTax) setTotalDividendTax(divTaxSum);
-
-    return { 
-        totalValue, totalCost, unrealizedPL, unrealizedPLPercent, realizedPL, netRealizedPL, 
-        totalDividends: dividendSum, totalDividendTax: divTaxSum, dailyPL, dailyPLPercent, totalCommission, totalSalesTax, totalCDC, 
-        totalOtherFees, totalCGT, freeCash, cashInvestment: totalDeposits - totalWithdrawals, 
-        netPrincipal, peakNetPrincipal, totalDeposits, reinvestedProfits, roi, mwrr
-    };
+    const yesterdayValue = totalValue - dailyPL; const dailyPLPercent = yesterdayValue > 0 ? (dailyPL / yesterdayValue) * 100 : 0; const reinvestedProfits = Math.max(0, totalCost - Math.max(0, netPrincipal));
+    if (dividendSum !== totalDividends) setTotalDividends(dividendSum); if (divTaxSum !== totalDividendTax) setTotalDividendTax(divTaxSum);
+    return { totalValue, totalCost, unrealizedPL, unrealizedPLPercent, realizedPL, netRealizedPL, totalDividends: dividendSum, totalDividendTax: divTaxSum, dailyPL, dailyPLPercent, totalCommission, totalSalesTax, totalCDC, totalOtherFees, totalCGT, freeCash, cashInvestment: totalDeposits - totalWithdrawals, netPrincipal, peakNetPrincipal, totalDeposits, reinvestedProfits, roi, mwrr };
   }, [holdings, realizedTrades, portfolioTransactions, ldcpMap]); 
 
   useEffect(() => { 
-      if (driveUser || transactions.length > 0) { 
-          localStorage.setItem('psx_transactions', JSON.stringify(transactions)); 
-          localStorage.setItem('psx_portfolios', JSON.stringify(portfolios)); 
-          localStorage.setItem('psx_current_portfolio_id', currentPortfolioId); 
-          localStorage.setItem('psx_manual_prices', JSON.stringify(manualPrices)); 
-          localStorage.setItem('psx_ldcp_map', JSON.stringify(ldcpMap)); 
-          localStorage.setItem('psx_price_timestamps', JSON.stringify(priceTimestamps)); 
-          localStorage.setItem('psx_brokers', JSON.stringify(brokers)); 
-          localStorage.setItem('psx_sector_overrides', JSON.stringify(sectorOverrides)); 
-          localStorage.setItem('psx_scanner_state', JSON.stringify(scannerState)); 
-          localStorage.setItem('psx_trade_scan_results', JSON.stringify(tradeScanResults));
-      } 
-      
-      if (driveUser && isReadyToSave.current) { 
-          setIsCloudSyncing(true); 
-          const timer = setTimeout(async () => { 
-              await saveToDrive({ 
-                  transactions, 
-                  portfolios, 
-                  currentPortfolioId, 
-                  manualPrices, 
-                  ldcpMap, 
-                  priceTimestamps, 
-                  brokers, 
-                  sectorOverrides, 
-                  scannerState, 
-                  geminiApiKey: userApiKey,
-                  scrapingApiKey: userScraperKey,
-                  webScrapingAIKey: userWebScrapingAIKey 
-              }); 
-              if (transactions.length > 0) {
-                  await syncTransactionsToSheet(transactions, portfolios);
-                  if (!googleSheetId) { const id = await getGoogleSheetId(); setGoogleSheetId(id); }
-              }
-              setIsCloudSyncing(false); 
-          }, 3000); 
-          return () => clearTimeout(timer); 
-      } 
+      if (driveUser || transactions.length > 0) { localStorage.setItem('psx_transactions', JSON.stringify(transactions)); localStorage.setItem('psx_portfolios', JSON.stringify(portfolios)); localStorage.setItem('psx_current_portfolio_id', currentPortfolioId); localStorage.setItem('psx_manual_prices', JSON.stringify(manualPrices)); localStorage.setItem('psx_ldcp_map', JSON.stringify(ldcpMap)); localStorage.setItem('psx_price_timestamps', JSON.stringify(priceTimestamps)); localStorage.setItem('psx_brokers', JSON.stringify(brokers)); localStorage.setItem('psx_sector_overrides', JSON.stringify(sectorOverrides)); localStorage.setItem('psx_scanner_state', JSON.stringify(scannerState)); localStorage.setItem('psx_trade_scan_results', JSON.stringify(tradeScanResults)); } 
+      if (driveUser && isReadyToSave.current) { setIsCloudSyncing(true); const timer = setTimeout(async () => { await saveToDrive({ transactions, portfolios, currentPortfolioId, manualPrices, ldcpMap, priceTimestamps, brokers, sectorOverrides, scannerState, geminiApiKey: userApiKey, scrapingApiKey: userScraperKey, webScrapingAIKey: userWebScrapingAIKey }); if (transactions.length > 0) { await syncTransactionsToSheet(); if (!googleSheetId) { const id = await getGoogleSheetId(); setGoogleSheetId(id); } } setIsCloudSyncing(false); }, 3000); return () => clearTimeout(timer); } 
   }, [transactions, portfolios, currentPortfolioId, manualPrices, ldcpMap, priceTimestamps, brokers, sectorOverrides, scannerState, tradeScanResults, driveUser, userApiKey, userScraperKey, userWebScrapingAIKey, googleSheetId]);
 
   useEffect(() => { 
       const tempHoldings: Record<string, Holding> = {}; 
       const tempRealized: RealizedTrade[] = []; 
-      
       const txsByKey: Record<string, Transaction[]> = {};
-
       portfolioTransactions.forEach(tx => { 
           if (tx.type === 'DEPOSIT' || tx.type === 'WITHDRAWAL' || tx.type === 'ANNUAL_FEE' || tx.type === 'OTHER') return; 
           if (tx.type === 'DIVIDEND' || tx.type === 'TAX') return; 
-          if (tx.type === 'HISTORY') { 
-              tempRealized.push({ 
-                  id: tx.id, ticker: 'PREV-PNL', broker: tx.broker || 'Unknown', quantity: 1, 
-                  buyAvg: 0, sellPrice: 0, date: tx.date, profit: tx.price, fees: 0, 
-                  commission: 0, tax: tx.tax || 0, cdcCharges: 0, otherFees: 0 
-              }); 
-              return; 
-          } 
-          const brokerKey = (tx.broker || 'Unknown'); 
-          const key = `${tx.ticker}|${brokerKey}`; 
-          if (!txsByKey[key]) txsByKey[key] = [];
-          txsByKey[key].push(tx);
+          if (tx.type === 'HISTORY') { tempRealized.push({ id: tx.id, ticker: 'PREV-PNL', broker: tx.broker || 'Unknown', quantity: 1, buyAvg: 0, sellPrice: 0, date: tx.date, profit: tx.price, fees: 0, commission: 0, tax: tx.tax || 0, cdcCharges: 0, otherFees: 0 }); return; } 
+          const brokerKey = (tx.broker || 'Unknown'); const key = `${tx.ticker}|${brokerKey}`; if (!txsByKey[key]) txsByKey[key] = []; txsByKey[key].push(tx);
       }); 
 
       Object.entries(txsByKey).forEach(([key, txs]) => {
           const [ticker, brokerName] = key.split('|');
-          
-          interface Lot {
-              quantity: number;
-              costPerShare: number;
-              date: string;
-              commPerShare: number;
-              taxPerShare: number;
-              cdcPerShare: number;
-              otherPerShare: number;
-          }
-          const lots: Lot[] = [];
-
+          const lots: any[] = [];
           const txsByDate: Record<string, Transaction[]> = {};
-          txs.forEach(t => {
-              if (!txsByDate[t.date]) txsByDate[t.date] = [];
-              txsByDate[t.date].push(t);
-          });
-
+          txs.forEach(t => { if (!txsByDate[t.date]) txsByDate[t.date] = []; txsByDate[t.date].push(t); });
           const sortedDates = Object.keys(txsByDate).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
 
           sortedDates.forEach(date => {
@@ -653,132 +233,32 @@ const App: React.FC = () => {
               const dayBuys = dayTxs.filter(t => t.type === 'BUY' || t.type === 'TRANSFER_IN');
               const daySells = dayTxs.filter(t => t.type === 'SELL' || t.type === 'TRANSFER_OUT');
 
-              const dayBuyLots = dayBuys.map(t => {
-                  const fees = (t.commission || 0) + (t.tax || 0) + (t.cdcCharges || 0) + (t.otherFees || 0);
-                  const costPerShare = t.quantity > 0 ? ((t.quantity * t.price) + fees) / t.quantity : 0;
-                  return {
-                      quantity: t.quantity,
-                      costPerShare,
-                      date: t.date,
-                      commPerShare: t.quantity > 0 ? (t.commission || 0) / t.quantity : 0,
-                      taxPerShare: t.quantity > 0 ? (t.tax || 0) / t.quantity : 0,
-                      cdcPerShare: t.quantity > 0 ? (t.cdcCharges || 0) / t.quantity : 0,
-                      otherPerShare: t.quantity > 0 ? (t.otherFees || 0) / t.quantity : 0
-                  };
-              });
+              const dayBuyLots = dayBuys.map(t => { const fees = (t.commission || 0) + (t.tax || 0) + (t.cdcCharges || 0) + (t.otherFees || 0); const costPerShare = t.quantity > 0 ? ((t.quantity * t.price) + fees) / t.quantity : 0; return { quantity: t.quantity, costPerShare, date: t.date, commPerShare: t.quantity > 0 ? (t.commission || 0) / t.quantity : 0, taxPerShare: t.quantity > 0 ? (t.tax || 0) / t.quantity : 0, cdcPerShare: t.quantity > 0 ? (t.cdcCharges || 0) / t.quantity : 0, otherPerShare: t.quantity > 0 ? (t.otherFees || 0) / t.quantity : 0 }; });
 
               daySells.forEach(sellTx => {
-                  let qtyToSell = sellTx.quantity;
-                  const sellFees = (sellTx.commission || 0) + (sellTx.tax || 0) + (sellTx.cdcCharges || 0) + (sellTx.otherFees || 0);
-                  const sellFeePerShare = sellTx.quantity > 0 ? sellFees / sellTx.quantity : 0;
-
+                  let qtyToSell = sellTx.quantity; const sellFees = (sellTx.commission || 0) + (sellTx.tax || 0) + (sellTx.cdcCharges || 0) + (sellTx.otherFees || 0); const sellFeePerShare = sellTx.quantity > 0 ? sellFees / sellTx.quantity : 0;
                   for (const buyLot of dayBuyLots) {
                       if (qtyToSell <= 0.0001) break;
-                      if (buyLot.quantity > 0) {
-                          const matched = Math.min(qtyToSell, buyLot.quantity);
-                          const revenue = matched * sellTx.price;
-                          const cost = matched * buyLot.costPerShare;
-                          const matchedSellFees = matched * sellFeePerShare;
-                          const profit = revenue - cost - matchedSellFees;
-
-                          tempRealized.push({
-                              id: sellTx.id, 
-                              ticker,
-                              broker: brokerName,
-                              quantity: matched,
-                              buyAvg: buyLot.costPerShare,
-                              sellPrice: sellTx.price,
-                              date: sellTx.date,
-                              profit,
-                              fees: matchedSellFees,
-                              commission: (sellTx.commission || 0) * (matched/sellTx.quantity),
-                              tax: (sellTx.tax || 0) * (matched/sellTx.quantity),
-                              cdcCharges: (sellTx.cdcCharges || 0) * (matched/sellTx.quantity),
-                              otherFees: (sellTx.otherFees || 0) * (matched/sellTx.quantity)
-                          });
-
-                          buyLot.quantity -= matched;
-                          qtyToSell -= matched;
-                      }
+                      if (buyLot.quantity > 0) { const matched = Math.min(qtyToSell, buyLot.quantity); const revenue = matched * sellTx.price; const cost = matched * buyLot.costPerShare; const matchedSellFees = matched * sellFeePerShare; const profit = revenue - cost - matchedSellFees; tempRealized.push({ id: sellTx.id, ticker, broker: brokerName, quantity: matched, buyAvg: buyLot.costPerShare, sellPrice: sellTx.price, date: sellTx.date, profit, fees: matchedSellFees, commission: (sellTx.commission || 0) * (matched/sellTx.quantity), tax: (sellTx.tax || 0) * (matched/sellTx.quantity), cdcCharges: (sellTx.cdcCharges || 0) * (matched/sellTx.quantity), otherFees: (sellTx.otherFees || 0) * (matched/sellTx.quantity) }); buyLot.quantity -= matched; qtyToSell -= matched; }
                   }
-
                   while (qtyToSell > 0.0001 && lots.length > 0) {
-                      const fifoLot = lots[0];
-                      const matched = Math.min(qtyToSell, fifoLot.quantity);
-                      const revenue = matched * sellTx.price;
-                      const cost = matched * fifoLot.costPerShare;
-                      const matchedSellFees = matched * sellFeePerShare;
-                      const profit = revenue - cost - matchedSellFees;
-
-                      tempRealized.push({
-                          id: `${sellTx.id}-fifo-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-                          ticker,
-                          broker: brokerName,
-                          quantity: matched,
-                          buyAvg: fifoLot.costPerShare,
-                          sellPrice: sellTx.price,
-                          date: sellTx.date,
-                          profit,
-                          fees: matchedSellFees,
-                          commission: (sellTx.commission || 0) * (matched/sellTx.quantity),
-                          tax: (sellTx.tax || 0) * (matched/sellTx.quantity),
-                          cdcCharges: (sellTx.cdcCharges || 0) * (matched/sellTx.quantity),
-                          otherFees: (sellTx.otherFees || 0) * (matched/sellTx.quantity)
-                      });
-
-                      fifoLot.quantity -= matched;
-                      qtyToSell -= matched;
-                      
-                      if (fifoLot.quantity < 0.0001) lots.shift();
+                      const fifoLot = lots[0]; const matched = Math.min(qtyToSell, fifoLot.quantity); const revenue = matched * sellTx.price; const cost = matched * fifoLot.costPerShare; const matchedSellFees = matched * sellFeePerShare; const profit = revenue - cost - matchedSellFees; tempRealized.push({ id: `${sellTx.id}-fifo-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`, ticker, broker: brokerName, quantity: matched, buyAvg: fifoLot.costPerShare, sellPrice: sellTx.price, date: sellTx.date, profit, fees: matchedSellFees, commission: (sellTx.commission || 0) * (matched/sellTx.quantity), tax: (sellTx.tax || 0) * (matched/sellTx.quantity), cdcCharges: (sellTx.cdcCharges || 0) * (matched/sellTx.quantity), otherFees: (sellTx.otherFees || 0) * (matched/sellTx.quantity) }); fifoLot.quantity -= matched; qtyToSell -= matched; if (fifoLot.quantity < 0.0001) lots.shift();
                   }
               });
-
-              dayBuyLots.forEach(l => {
-                  if (l.quantity > 0.0001) lots.push(l);
-              });
+              dayBuyLots.forEach(l => { if (l.quantity > 0.0001) lots.push(l); });
           });
 
           if (lots.length > 0) {
-              const totalQty = lots.reduce((acc, l) => acc + l.quantity, 0);
-              const totalCost = lots.reduce((acc, l) => acc + (l.quantity * l.costPerShare), 0);
-              
-              const totalComm = lots.reduce((acc, l) => acc + (l.quantity * l.commPerShare), 0);
-              const totalTax = lots.reduce((acc, l) => acc + (l.quantity * l.taxPerShare), 0);
-              const totalCDC = lots.reduce((acc, l) => acc + (l.quantity * l.cdcPerShare), 0);
-              const totalOther = lots.reduce((acc, l) => acc + (l.quantity * l.otherPerShare), 0);
-
-              const sector = sectorOverrides[ticker] || getSector(ticker);
-              const avgPrice = totalCost / totalQty;
-
-              tempHoldings[key] = {
-                  ticker,
-                  sector,
-                  broker: brokerName,
-                  quantity: totalQty,
-                  avgPrice,
-                  currentPrice: 0, 
-                  totalCommission: totalComm,
-                  totalTax: totalTax,
-                  totalCDC: totalCDC,
-                  totalOtherFees: totalOther
-              };
+              const totalQty = lots.reduce((acc, l) => acc + l.quantity, 0); const totalCost = lots.reduce((acc, l) => acc + (l.quantity * l.costPerShare), 0); const totalComm = lots.reduce((acc, l) => acc + (l.quantity * l.commPerShare), 0); const totalTax = lots.reduce((acc, l) => acc + (l.quantity * l.taxPerShare), 0); const totalCDC = lots.reduce((acc, l) => acc + (l.quantity * l.cdcPerShare), 0); const totalOther = lots.reduce((acc, l) => acc + (l.quantity * l.otherPerShare), 0); const sector = sectorOverrides[ticker] || getSector(ticker); const avgPrice = totalCost / totalQty;
+              tempHoldings[key] = { ticker, sector, broker: brokerName, quantity: totalQty, avgPrice, currentPrice: 0, totalCommission: totalComm, totalTax: totalTax, totalCDC: totalCDC, totalOtherFees: totalOther };
           }
       });
 
-      const finalHoldings = Object.values(tempHoldings).filter(h => h.quantity > 0.0001).map(h => { 
-          const current = manualPrices[h.ticker] || h.avgPrice; 
-          const lastUpdated = priceTimestamps[h.ticker]; 
-          return { ...h, currentPrice: current, lastUpdated }; 
-      }); 
-      setHoldings(finalHoldings); 
-      setRealizedTrades(tempRealized); 
+      const finalHoldings = Object.values(tempHoldings).filter(h => h.quantity > 0.0001).map(h => { const current = manualPrices[h.ticker] || h.avgPrice; const lastUpdated = priceTimestamps[h.ticker]; return { ...h, currentPrice: current, lastUpdated }; }); 
+      setHoldings(finalHoldings); setRealizedTrades(tempRealized); 
   }, [portfolioTransactions, manualPrices, priceTimestamps, sectorOverrides]);
   
-  const handleTickerClick = (ticker: string) => {
-      localStorage.setItem('psx_analyzer_mode', 'STOCK');
-      localStorage.setItem('psx_last_analyzed_ticker', ticker);
-      setCurrentView('STOCKS');
-  };
+  const handleTickerClick = (ticker: string) => { localStorage.setItem('psx_analyzer_mode', 'STOCK'); localStorage.setItem('psx_last_analyzed_ticker', ticker); setCurrentView('STOCKS'); };
 
   if (isAuthChecking) return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><Loader2 className="animate-spin text-emerald-500" size={32} /></div>;
   if (showLogin) return <LoginPage onGuestLogin={() => setShowLogin(false)} onGoogleLogin={handleLogin} />;
@@ -826,9 +306,9 @@ const App: React.FC = () => {
                      
                      <div className="flex items-center gap-3 pr-2">
                          {isCloudSyncing ? ( <Loader2 size={18} className="text-emerald-500 animate-spin" /> ) : ( <Save size={18} className="text-emerald-500" /> )}
-                         <div className="flex flex-col gap-1">
+                         <div className="flex flex-col gap-1 items-center">
                              <button onClick={handleManualLogout} className="text-slate-400 hover:text-rose-500 transition-colors" title="Sign Out"> <LogOut size={18} /> </button>
-                             <button onClick={handleWipeData} className="text-[10px] text-rose-500 font-bold hover:underline" title="Permanently delete data">Wipe Data</button>
+                             <button onClick={handleWipeData} className="text-[9px] text-rose-500 font-bold hover:underline" title="Permanently delete data">Wipe Data</button>
                          </div>
                      </div>
                  </div>
@@ -943,20 +423,14 @@ const App: React.FC = () => {
                                 {isCombinedView && (
                                     <Popover.Root>
                                         <Popover.Trigger asChild>
-                                            <button 
-                                                className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 transition-colors whitespace-nowrap outline-none"
-                                            >
+                                            <button className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 transition-colors whitespace-nowrap outline-none">
                                                 <Layers size={14} />
                                                 <span>Portfolios ({combinedPortfolioIds.size})</span>
                                                 <ChevronDown size={14} />
                                             </button>
                                         </Popover.Trigger>
                                         <Popover.Portal>
-                                            <Popover.Content 
-                                                className="w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 p-2 animate-in fade-in zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2" 
-                                                sideOffset={5} 
-                                                align="end"
-                                            >
+                                            <Popover.Content className="w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 p-2 animate-in fade-in zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2" sideOffset={5} align="end">
                                                 <div className="flex justify-between items-center px-2 py-2 border-b border-slate-100 dark:border-slate-700 mb-1">
                                                     <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500">Included Portfolios</span>
                                                     <button onClick={handleSelectAllPortfolios} className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold hover:underline">Select All</button>
@@ -965,15 +439,8 @@ const App: React.FC = () => {
                                                     {portfolios.map(p => {
                                                         const isSelected = combinedPortfolioIds.has(p.id);
                                                         return (
-                                                            <div 
-                                                                key={p.id} 
-                                                                onClick={() => handleTogglePortfolioSelection(p.id)}
-                                                                className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${isSelected ? 'bg-emerald-50 dark:bg-emerald-900/30' : 'hover:bg-slate-50 dark:hover:bg-slate-700'}`}
-                                                            >
-                                                                {isSelected ? 
-                                                                    <CheckSquare size={16} className="text-emerald-600 dark:text-emerald-400" /> : 
-                                                                    <Square size={16} className="text-slate-300 dark:text-slate-500" />
-                                                                }
+                                                            <div key={p.id} onClick={() => handleTogglePortfolioSelection(p.id)} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${isSelected ? 'bg-emerald-50 dark:bg-emerald-900/30' : 'hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
+                                                                {isSelected ? <CheckSquare size={16} className="text-emerald-600 dark:text-emerald-400" /> : <Square size={16} className="text-slate-300 dark:text-slate-500" /> }
                                                                 <span className={`text-sm font-medium ${isSelected ? 'text-slate-800 dark:text-slate-200' : 'text-slate-500 dark:text-slate-400'}`}>{p.name}</span>
                                                             </div>
                                                         );
@@ -989,13 +456,7 @@ const App: React.FC = () => {
 
                                 <div className="flex items-center gap-2">
                                     <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide whitespace-nowrap">Combined</span>
-                                    <button 
-                                        onClick={() => {
-                                            const newState = !isCombinedView;
-                                            setIsCombinedView(newState);
-                                        }} 
-                                        className={`w-10 h-5 rounded-full relative transition-colors shrink-0 ${isCombinedView ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'}`}
-                                    >
+                                    <button onClick={() => setIsCombinedView(!isCombinedView)} className={`w-10 h-5 rounded-full relative transition-colors shrink-0 ${isCombinedView ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'}`}>
                                         <div className={`w-3 h-3 bg-white rounded-full absolute top-1 transition-all shadow-sm ${isCombinedView ? 'left-6' : 'left-1'}`}></div>
                                     </button>
                                 </div>
@@ -1003,20 +464,9 @@ const App: React.FC = () => {
 
                             {currentView === 'DASHBOARD' && (
                                 <>
-                                    <button 
-                                        onClick={() => setShowPriceEditor(true)} 
-                                        className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 px-4 py-3 rounded-xl font-medium shadow-sm transition-colors flex items-center gap-2 whitespace-nowrap shrink-0"
-                                    > 
-                                        <Edit3 size={18} /> <span>Manual Prices</span> 
-                                    </button>
+                                    <button onClick={() => setShowPriceEditor(true)} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 px-4 py-3 rounded-xl font-medium shadow-sm transition-colors flex items-center gap-2 whitespace-nowrap shrink-0"> <Edit3 size={18} /> <span>Manual Prices</span> </button>
                                      <div className="flex items-center gap-2 shrink-0">
-                                        <button 
-                                            onClick={handleSyncPrices} 
-                                            disabled={isSyncing} 
-                                            className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-800/50 text-emerald-700 dark:text-emerald-400 px-4 py-3 rounded-xl font-medium shadow-sm transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                                        > 
-                                            {isSyncing ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />} <span>Sync PSX</span> 
-                                        </button>
+                                        <button onClick={handleSyncPrices} disabled={isSyncing} className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-800/50 text-emerald-700 dark:text-emerald-400 px-4 py-3 rounded-xl font-medium shadow-sm transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"> {isSyncing ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />} <span>Sync PSX</span> </button>
                                         {priceError && <div className="w-3 h-3 rounded-full bg-rose-500 animate-pulse" title="Some prices failed to update. Check list."></div>}
                                     </div>
                                 </>
@@ -1032,13 +482,7 @@ const App: React.FC = () => {
                     <Dashboard stats={stats} lastUpdated={lastPriceUpdate} />
                     <div className="flex flex-col gap-6">
                         <AllocationChart holdings={holdings} />
-                        <HoldingsTable 
-                            holdings={holdings} 
-                            showBroker={true} 
-                            failedTickers={failedTickers} 
-                            ldcpMap={ldcpMap} 
-                            onTickerClick={handleTickerClick} 
-                        />
+                        <HoldingsTable holdings={holdings} showBroker={true} failedTickers={failedTickers} ldcpMap={ldcpMap} onTickerClick={handleTickerClick} />
                     </div>
                 </div>
             )}
@@ -1050,6 +494,7 @@ const App: React.FC = () => {
                         currentPrices={manualPrices}
                         sectors={sectorMap}
                         onTickerClick={(t) => setViewTicker(t)}
+                        allSymbols={allSymbols}
                     />
                 </div>
             )}
@@ -1062,13 +507,7 @@ const App: React.FC = () => {
 
             {currentView === 'HISTORY' && (
                 <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-                    <TransactionList 
-                        transactions={portfolioTransactions} 
-                        onDelete={handleDeleteTransaction} 
-                        onDeleteMultiple={handleDeleteTransactions}
-                        onEdit={handleEditClick} 
-                        googleSheetId={googleSheetId}
-                    />
+                    <TransactionList transactions={portfolioTransactions} onDelete={handleDeleteTransaction} onDeleteMultiple={handleDeleteTransactions} onEdit={handleEditClick} googleSheetId={googleSheetId} />
                 </div>
             )}
 
@@ -1085,6 +524,8 @@ const App: React.FC = () => {
                         brokers={brokers} 
                         defaultBrokerId={currentPortfolio?.defaultBrokerId || brokers[0]?.id || ''} 
                         transactions={portfolioTransactions}
+                        allSymbols={allSymbols}
+                        currentPrices={manualPrices}
                     />
                 </div>
             )}
@@ -1107,109 +548,32 @@ const App: React.FC = () => {
                       
                       <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Default Broker <span className="text-rose-500">*</span></label>
                       <div className="relative mb-6">
-                          <select 
-                              required
-                              value={portfolioBrokerIdInput} 
-                              onChange={(e) => setPortfolioBrokerIdInput(e.target.value)} 
-                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-700 outline-none appearance-none focus:ring-2 focus:ring-emerald-500"
-                          >
+                          <select required value={portfolioBrokerIdInput} onChange={(e) => setPortfolioBrokerIdInput(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-700 outline-none appearance-none focus:ring-2 focus:ring-emerald-500">
                               <option value="">Select a Broker</option>
-                              {brokers.map(b => (
-                                  <option key={b.id} value={b.id}>{b.name}</option>
-                              ))}
+                              {brokers.map(b => ( <option key={b.id} value={b.id}>{b.name}</option> ))}
                           </select>
                           <Briefcase size={16} className="absolute right-4 top-3.5 text-slate-400 pointer-events-none" />
                       </div>
 
                       <div className="flex gap-2">
-                          {editingPortfolioId && (
-                              <button 
-                                  type="button" 
-                                  onClick={handleDeletePortfolio} 
-                                  className="px-4 py-3 bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50 border border-rose-200 dark:border-rose-800 rounded-xl font-bold transition-all"
-                                  title="Delete Portfolio"
-                              >
-                                  <Trash2 size={20} />
-                              </button>
-                          )}
-                          <button 
-                              type="submit" 
-                              disabled={!portfolioNameInput.trim()} 
-                              className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-emerald-600/20"
-                          >
-                              {editingPortfolioId ? 'Save Changes' : 'Create Portfolio'}
-                          </button>
+                          {editingPortfolioId && ( <button type="button" onClick={handleDeletePortfolio} className="px-4 py-3 bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50 border border-rose-200 dark:border-rose-800 rounded-xl font-bold transition-all" title="Delete Portfolio"><Trash2 size={20} /></button> )}
+                          <button type="submit" disabled={!portfolioNameInput.trim()} className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-emerald-600/20"> {editingPortfolioId ? 'Save Changes' : 'Create Portfolio'} </button>
                       </div>
                   </form>
               </div>
           </div>
       )}
       
-      {/* --- PASSED ALL SYMBOLS TO TRANSACTION FORM --- */}
-      <TransactionForm 
-          isOpen={showAddModal} 
-          onClose={() => setShowAddModal(false)} 
-          onAddTransaction={handleAddTransaction} 
-          onUpdateTransaction={handleUpdateTransaction} 
-          existingTransactions={transactions} 
-          editingTransaction={editingTransaction} 
-          brokers={brokers} 
-          onManageBrokers={() => setShowBrokerManager(true)}
-          portfolioDefaultBrokerId={currentPortfolio?.defaultBrokerId}
-          freeCash={stats.freeCash}
-          savedScannedTrades={tradeScanResults}
-          onSaveScannedTrades={handleUpdateTradeScanResults}
-          allSymbols={allSymbols} 
-      />
+      <TransactionForm isOpen={showAddModal} onClose={() => setShowAddModal(false)} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} existingTransactions={transactions} editingTransaction={editingTransaction} brokers={brokers} onManageBrokers={() => setShowBrokerManager(true)} portfolioDefaultBrokerId={currentPortfolio?.defaultBrokerId} freeCash={stats.freeCash} savedScannedTrades={tradeScanResults} onSaveScannedTrades={handleUpdateTradeScanResults} allSymbols={allSymbols} />
       <BrokerManager isOpen={showBrokerManager} onClose={() => setShowBrokerManager(false)} brokers={brokers} onAddBroker={handleAddBroker} onUpdateBroker={handleUpdateBroker} onDeleteBroker={handleDeleteBroker} />
-      
-      <ApiKeyManager 
-          isOpen={showApiKeyManager} 
-          onClose={() => setShowApiKeyManager(false)} 
-          apiKey={userApiKey} 
-          scrapingApiKey={userScraperKey}
-          webScrapingAIKey={userWebScrapingAIKey} 
-          onSave={handleSaveApiKey} 
-          isDriveConnected={!!driveUser} 
-      />
-
+      <ApiKeyManager isOpen={showApiKeyManager} onClose={() => setShowApiKeyManager(false)} apiKey={userApiKey} scrapingApiKey={userScraperKey} webScrapingAIKey={userWebScrapingAIKey} onSave={handleSaveApiKey} isDriveConnected={!!driveUser} />
       <PriceEditor isOpen={showPriceEditor} onClose={() => setShowPriceEditor(false)} holdings={holdings} onUpdatePrices={handleUpdatePrices} />
-      
-      <DividendScanner 
-          key={currentPortfolioId}
-          isOpen={showDividendScanner} 
-          onClose={() => setShowDividendScanner(false)} 
-          transactions={portfolioTransactions} 
-          onAddTransaction={handleAddTransaction} 
-          onOpenSettings={() => setShowApiKeyManager(true)}
-          savedResults={scannerState[currentPortfolioId] || []}
-          onSaveResults={handleScannerUpdate}
-      />
-
-      <UpcomingEventsScanner 
-          isOpen={showUpcomingScanner} 
-          onClose={() => setShowUpcomingScanner(false)} 
-          holdings={holdings}
-      />
-
-      <TransferModal 
-          isOpen={showTransferModal} 
-          onClose={() => setShowTransferModal(false)} 
-          currentPortfolioId={currentPortfolioId}
-          portfolios={portfolios}
-          holdings={holdings}
-          onTransfer={handleTransferStock}
-      />
+      <DividendScanner key={currentPortfolioId} isOpen={showDividendScanner} onClose={() => setShowDividendScanner(false)} transactions={portfolioTransactions} onAddTransaction={handleAddTransaction} onOpenSettings={() => setShowApiKeyManager(true)} savedResults={scannerState[currentPortfolioId] || []} onSaveResults={handleScannerUpdate} />
+      <UpcomingEventsScanner isOpen={showUpcomingScanner} onClose={() => setShowUpcomingScanner(false)} holdings={holdings} />
+      <TransferModal isOpen={showTransferModal} onClose={() => setShowTransferModal(false)} currentPortfolioId={currentPortfolioId} portfolios={portfolios} holdings={holdings} onTransfer={handleTransferStock} />
 
       {viewTicker && (
-          <TickerProfile 
-              ticker={viewTicker}
-              currentPrice={manualPrices[viewTicker] || 0} 
-              sector={sectorOverrides[viewTicker] || getSector(viewTicker)}
-              transactions={portfolioTransactions.filter(t => t.ticker === viewTicker)}
-              holding={holdings.find(h => h.ticker === viewTicker)} 
-              onClose={() => setViewTicker(null)}
-          />
+          <TickerProfile ticker={viewTicker} currentPrice={manualPrices[viewTicker] || 0} sector={sectorOverrides[viewTicker] || getSector(viewTicker)} transactions={portfolioTransactions.filter(t => t.ticker === viewTicker)} holding={holdings.find(h => h.ticker === viewTicker)} onClose={() => setViewTicker(null)} />
       )}
     </div>
   );
