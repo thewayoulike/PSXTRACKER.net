@@ -319,7 +319,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
   // --- FIX: Removed Strict Check for Bulk Imports ---
   const handleAcceptTrade = (trade: EditableTrade) => { 
       setFormError(null); 
-      // Historical ledgers shouldn't be blocked by current cash constraints.
+      // Removed cash check: Historical ledgers shouldn't be blocked
       addSingleTrade(trade); 
       updateScannedTrades(savedScannedTrades.filter(t => t !== trade)); 
   };
@@ -327,8 +327,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
   const handleAcceptSelected = () => { 
       setFormError(null); 
       const selectedTrades = savedScannedTrades.filter((_, i) => selectedScanIndices.has(i)); 
-      
-      // Historical ledgers shouldn't be blocked by current cash constraints.
+      // Bulk additions now ignore current cash constraints
       selectedTrades.forEach(addSingleTrade); 
       updateScannedTrades(savedScannedTrades.filter((_, i) => !selectedScanIndices.has(i))); 
       setSelectedScanIndices(new Set()); 
