@@ -13,6 +13,26 @@ const port = 3001;
 
 app.use(bodyParser.json({ limit: '10mb' }));
 
+// --- NEW: YOUR PRIVATE VPS PROXY TO BYPASS CORS ---
+app.get('/proxy', async (req, res) => {
+    const targetUrl = req.query.url;
+    if (!targetUrl) return res.status(400).send("No URL provided");
+    
+    try {
+        // Fetch data directly from PSX via your VPS
+        const response = await fetch(targetUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        });
+        const data = await response.text();
+        res.send(data);
+    } catch (error) {
+        console.error("Proxy Error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // 1. Database Connection
 const dbPath = path.join(__dirname, 'psx_data.db');
 const db = new Database(dbPath, (err) => {
@@ -30,7 +50,7 @@ db.serialize(() => {
 });
 
 // 3. API: Load Data
-app.get('/api/load/:email', (req, res) => {
+app.get('/load/:email', (req, res) => {
     db.get("SELECT data FROM user_data WHERE email = ?", [req.params.email], (err, row) => {
         if (err) return res.status(500).json({ success: false, error: err.message });
         res.json({ success: true, data: row ? JSON.parse(row.data) : null });
@@ -38,7 +58,7 @@ app.get('/api/load/:email', (req, res) => {
 });
 
 // 4. API: Save Data
-app.post('/api/save', (req, res) => {
+app.post('/save', (req, res) => {
     const { email, data } = req.body;
     if (!email || !data) return res.status(400).json({ success: false, message: "Missing data" });
     const query = `INSERT INTO user_data (email, data, last_updated) 
@@ -50,8 +70,8 @@ app.post('/api/save', (req, res) => {
     });
 });
 
-// 5. API: Delete Data (Privacy Requirement)
-app.delete('/api/delete/:email', (req, res) => {
+// 5. API: Delete Data
+app.delete('/delete/:email', (req, res) => {
     db.run(`DELETE FROM user_data WHERE email = ?`, [req.params.email], (err) => {
         if (err) return res.status(500).json({ success: false });
         res.json({ success: true });
