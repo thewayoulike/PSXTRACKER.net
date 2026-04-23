@@ -342,3 +342,45 @@ const parseMarketWatchTable = (html: string, results: Record<string, any>, targe
         });
     } catch (e) { console.error("Error parsing HTML", e); }
 };
+export const fetchAllPSXSymbols = async (): Promise<string[]> => {
+    const targetUrl = `https://dps.psx.com.pk/market-watch`;
+    const html = await fetchUrlWithFallback(targetUrl); // Uses your existing proxy logic
+
+    if (!html || html.length < 500) return [];
+
+    const symbols = new Set<string>();
+    
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, "text/html");
+        const tables = doc.querySelectorAll("table");
+
+        tables.forEach(table => {
+            const rows = table.querySelectorAll("tr");
+            rows.forEach((row, rIdx) => {
+                if (rIdx === 0) return; // Skip headers
+
+                const cols = row.querySelectorAll("td");
+                if (cols.length < 2) return;
+
+                // Ticker symbol is typically in the first column
+                const symCell = cols[0];
+                const anchor = symCell.querySelector('a');
+                let symbol = anchor ? anchor.textContent?.trim().toUpperCase() : symCell.textContent?.trim().toUpperCase();
+
+                // Clean and validate symbol
+                if (symbol) {
+                    symbol = symbol.split(/[\s-]/)[0]; // Remove extra names (e.g. "OGDC Oil & Gas")
+                    if (symbol.length >= 3 && symbol.length <= 6 && !TICKER_BLACKLIST.includes(symbol)) {
+                        symbols.add(symbol);
+                    }
+                }
+            });
+        });
+
+        return Array.from(symbols).sort();
+    } catch (e) {
+        console.error("Failed to parse symbols", e);
+        return [];
+    }
+};
