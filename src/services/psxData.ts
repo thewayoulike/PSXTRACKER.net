@@ -342,13 +342,13 @@ const parseMarketWatchTable = (html: string, results: Record<string, any>, targe
         });
     } catch (e) { console.error("Error parsing HTML", e); }
 };
-export const fetchAllPSXSymbols = async (): Promise<string[]> => {
+export const fetchAllPSXSymbols = async (): Promise<Record<string, string>> => {
     const targetUrl = `https://dps.psx.com.pk/market-watch`;
-    const html = await fetchUrlWithFallback(targetUrl); // Uses your existing proxy logic
+    const html = await fetchUrlWithFallback(targetUrl);
 
-    if (!html || html.length < 500) return [];
+    if (!html || html.length < 500) return {};
 
-    const symbols = new Set<string>();
+    const symbolsMap: Record<string, string> = {};
     
     try {
         const parser = new DOMParser();
@@ -357,24 +357,44 @@ export const fetchAllPSXSymbols = async (): Promise<string[]> => {
 
         tables.forEach(table => {
             const rows = table.querySelectorAll("tr");
+            let currentGroupHeader = "Unknown Sector";
+
             rows.forEach((row, rIdx) => {
                 if (rIdx === 0) return; // Skip headers
 
                 const cols = row.querySelectorAll("td");
+                
+                // Identify Sector Group Headers (Rows with 1 column or very few columns)
+                if (cols.length === 1 || (cols.length > 0 && cols.length < 4)) {
+                    const text = cols[0]?.textContent?.trim();
+                    if (text && text.length > 3 && !TICKER_BLACKLIST.includes(text.toUpperCase())) {
+                        currentGroupHeader = SECTOR_CODE_MAP[text] || text;
+                    }
+                    return;
+                }
+
                 if (cols.length < 2) return;
 
                 // Ticker symbol is typically in the first column
                 const symCell = cols[0];
-                const anchor = symCell.querySelector('a');
-                let symbol = anchor ? anchor.textContent?.trim().toUpperCase() : symCell.textContent?.trim().toUpperCase();
+                let symbol = symCell.querySelector('a')?.textContent?.trim().toUpperCase() || symCell.textContent?.trim().toUpperCase();
 
                 // Clean and validate symbol
                 if (symbol) {
-                    symbol = symbol.split(/[\s-]/)[0]; // Remove extra names (e.g. "OGDC Oil & Gas")
-                    if (symbol.length >= 3 && symbol.length <= 6 && !TICKER_BLACKLIST.includes(symbol)) {
-                        symbols.add(symbol);
+                    symbol = symbol.split(/[\s-]/)[0]; // Remove extra names
+                    if (symbol.length >= 3 && symbol.length <= 8 && !TICKER_BLACKLIST.includes(symbol) && isNaN(Number(symbol))) {
+                        symbolsMap[symbol] = currentGroupHeader;
                     }
                 }
+            });
+        });
+
+        return symbolsMap;
+    } catch (e) {
+        console.error("Failed to parse symbols", e);
+        return {};
+    }
+};
             });
         });
 
