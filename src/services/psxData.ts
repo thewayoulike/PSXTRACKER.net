@@ -10,22 +10,6 @@ let userWebScrapingAIKey: string | null = null;
 export const setScrapingApiKey = (key: string | null) => { userScrapingKey = key ? key.trim() : null; };
 export const setWebScrapingAIKey = (key: string | null) => { userWebScrapingAIKey = key ? key.trim() : null; };
 
-const FREE_PROXIES = [
-    (url: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&t=${Date.now()}`,
-    (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}&t=${Date.now()}`,
-    (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}&_t=${Date.now()}`,
-    (url: string) => `https://thingproxy.freeboard.io/fetch/${url}?t=${Date.now()}`,
-];
-
-const getShuffledFreeProxies = () => {
-    const array = [...FREE_PROXIES];
-    for (let i = array.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [array[i], array[j]] = [array[j], array[i]];
-    }
-    return array;
-};
-
 const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 10000) => {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
@@ -40,25 +24,19 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout 
 };
 
 const fetchUrlWithFallback = async (targetUrl: string): Promise<string | null> => {
-    const freeList = getShuffledFreeProxies();
-    for (const proxyGen of freeList) {
-        try {
-            const proxyUrl = proxyGen(targetUrl);
-            const response = await fetchWithTimeout(proxyUrl, {}, 6000); 
-            if (!response.ok) continue;
-
+    // 1. TRY YOUR PRIVATE VPS PROXY FIRST (No CORS, Ultra-fast)
+    try {
+        const proxyUrl = `/proxy?url=${encodeURIComponent(targetUrl)}`;
+        const response = await fetchWithTimeout(proxyUrl, {}, 8000); 
+        if (response.ok) {
             const text = await response.text();
-            if (proxyUrl.includes('allorigins')) {
-                try {
-                    const json = JSON.parse(text);
-                    if (json.contents && json.contents.length > 500) return json.contents;
-                } catch (e) { continue; }
-            } else {
-                if (text && text.length > 500) return text; 
-            }
-        } catch (e) { }
+            if (text && text.length > 500) return text;
+        }
+    } catch (e) {
+        console.warn("VPS Proxy failed, falling back to APIs...");
     }
 
+    // 2. FALLBACK: Scrape.do
     if (userScrapingKey) {
         try {
             const premiumUrl = `http://api.scrape.do?token=${userScrapingKey}&url=${encodeURIComponent(targetUrl)}`;
@@ -67,6 +45,7 @@ const fetchUrlWithFallback = async (targetUrl: string): Promise<string | null> =
         } catch (e) { }
     }
 
+    // 3. FALLBACK: WebScraping.AI
     if (userWebScrapingAIKey) {
         try {
             const wsUrl = `https://api.webscraping.ai/html?api_key=${userWebScrapingAIKey}&url=${encodeURIComponent(targetUrl)}`;
@@ -256,7 +235,7 @@ const parseMarketWatchTable = (html: string, results: Record<string, any>, targe
     } catch (e) { }
 };
 
-// --- NEW FUNCTION TO GET ALL SYMBOLS AND THEIR SECTORS SIMULTANEOUSLY ---
+// --- NEW FUNCTION USING YOUR PRIVATE PROXY ---
 export const fetchAllPSXSymbols = async (): Promise<{ symbols: string[], sectors: Record<string, string> }> => {
     const targetUrl = `https://dps.psx.com.pk/market-watch`;
     const html = await fetchUrlWithFallback(targetUrl);
@@ -276,9 +255,8 @@ export const fetchAllPSXSymbols = async (): Promise<{ symbols: string[], sectors
             let currentGroupHeader = "Unknown Sector";
 
             rows.forEach((row, rIdx) => {
-                if (rIdx === 0) return; // Skip headers
+                if (rIdx === 0) return; 
 
-                // FIX: Look at both th and td. PSX sometimes uses th for sector headers!
                 const cells = row.querySelectorAll("td, th");
                 
                 // Identify Sector Group Headers
