@@ -8,6 +8,7 @@ import {
 import { Card } from './ui/Card';
 import { exportToCSV } from '../utils/export';
 import { fetchCompanyFundamentals, FundamentalsData } from '../services/financials';
+import { getSector } from '../services/sectors'; // <-- IMPORTED BULLETPROOF FALLBACK
 
 interface TickerPerformanceListProps {
   transactions: Transaction[];
@@ -183,7 +184,7 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
           const dividendYieldOnCost = lifetimeBuyCost > 0 ? (totalDividends / lifetimeBuyCost) * 100 : 0;
           const avgDPS = dividendSharesCount > 0 ? totalDividends / dividendSharesCount : 0;
 
-          return { ticker, sector: sectors[ticker] || 'Unknown', status: ownedQty > 0.01 ? 'Active' : 'Closed', ownedQty, soldQty, currentPrice, currentAvgPrice, currentValue, totalCostBasis, realizedPL, unrealizedPL, totalNetReturn, totalDividends, dividendTax, netDividends: totalDividends - dividendTax, dividendCount, dividendSharesCount, dividendYieldOnCost, avgDPS, feesPaid, totalComm, totalTradingTax, totalCDC, totalOther, tradeCount, buyCount, sellCount, lifetimeROI, allocationPercent, breakEvenPrice, lifetimeBuyCost, holdingPeriod };
+          return { ticker, sector: sectors[ticker] || getSector(ticker) || 'Unknown', status: ownedQty > 0.01 ? 'Active' : 'Closed', ownedQty, soldQty, currentPrice, currentAvgPrice, currentValue, totalCostBasis, realizedPL, unrealizedPL, totalNetReturn, totalDividends, dividendTax, netDividends: totalDividends - dividendTax, dividendCount, dividendSharesCount, dividendYieldOnCost, avgDPS, feesPaid, totalComm, totalTradingTax, totalCDC, totalOther, tradeCount, buyCount, sellCount, lifetimeROI, allocationPercent, breakEvenPrice, lifetimeBuyCost, holdingPeriod };
       }).sort((a, b) => a.ticker.localeCompare(b.ticker));
   }, [transactions, currentPrices, sectors, totalPortfolioValue]);
 
@@ -219,7 +220,7 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
                   .filter(s => !existing.has(s))
                   .map(s => ({
                       ticker: s,
-                      sector: sectors[s] || 'Unknown',
+                      sector: sectors[s] || getSector(s) || 'Unknown', // <-- BULLETPROOF FALLBACK
                       totalNetReturn: 0,
                       isNotHeld: true
                   }));
@@ -242,7 +243,7 @@ export const TickerPerformanceList: React.FC<TickerPerformanceListProps> = ({
 
       return {
           ticker: selectedTicker,
-          sector: sectors[selectedTicker] || 'Unknown',
+          sector: sectors[selectedTicker] || getSector(selectedTicker) || 'Unknown', // <-- BULLETPROOF FALLBACK
           status: 'Not Held',
           ownedQty: 0, soldQty: 0, currentPrice: currentPrices[selectedTicker] || 0, currentAvgPrice: 0, currentValue: 0,
           totalCostBasis: 0, realizedPL: 0, unrealizedPL: 0, totalNetReturn: 0,
