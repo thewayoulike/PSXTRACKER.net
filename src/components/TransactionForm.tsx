@@ -318,20 +318,22 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
   
   // --- FIX: Removed Strict Check for Bulk Imports ---
   const handleAcceptTrade = (trade: EditableTrade) => { 
-      setFormError(null); 
-      // Removed cash check: Historical ledgers shouldn't be blocked
-      addSingleTrade(trade); 
-      updateScannedTrades(savedScannedTrades.filter(t => t !== trade)); 
-  };
+    setFormError(null); 
+    // We removed the cost check here so historical imports are never blocked
+    addSingleTrade(trade); 
+    updateScannedTrades(savedScannedTrades.filter(t => t !== trade)); 
+};
 
-  const handleAcceptSelected = () => { 
-      setFormError(null); 
-      const selectedTrades = savedScannedTrades.filter((_, i) => selectedScanIndices.has(i)); 
-      // Bulk additions now ignore current cash constraints
-      selectedTrades.forEach(addSingleTrade); 
-      updateScannedTrades(savedScannedTrades.filter((_, i) => !selectedScanIndices.has(i))); 
-      setSelectedScanIndices(new Set()); 
-  };
+const handleAcceptSelected = () => { 
+    setFormError(null); 
+    const selectedTrades = savedScannedTrades.filter((_, i) => selectedScanIndices.has(i)); 
+    
+    // This allows all 36 trades to be added regardless of current cash
+    selectedTrades.forEach(addSingleTrade); 
+    
+    updateScannedTrades(savedScannedTrades.filter((_, i) => !selectedScanIndices.has(i))); 
+    setSelectedScanIndices(new Set()); 
+};
   
   const updateSingleScannedTrade = (index: number, field: keyof EditableTrade, value: any) => { const updated = [...savedScannedTrades]; updated[index] = { ...updated[index], [field]: value }; updateScannedTrades(updated); };
   const getFileIcon = () => { if (selectedFile) { const isSheet = selectedFile.name.endsWith('.csv') || selectedFile.name.endsWith('.xlsx') || selectedFile.name.endsWith('.xls'); if (isSheet) return <FileSpreadsheet size={32} />; return <FileText size={32} />; } if (mode === 'AI_SCAN') return <Sparkles size={32} className="text-indigo-500" />; if (mode === 'IMPORT') return <Upload size={32} className="text-blue-500" />; if (mode === 'EMAIL_IMPORT') return <Mail size={32} className="text-rose-500" />; return <ScanText size={32} className="text-emerald-500" />; };
@@ -405,15 +407,20 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
               <div><label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Date</label><input required type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-sm dark:text-slate-200 focus:ring-2 focus:ring-emerald-500/20 outline-none dark:color-scheme-dark"/></div> 
               
               <div>
-                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Ticker</label>
-                  <TickerSearch 
-                      value={ticker} 
-                      options={allSymbols} 
-                      onChange={setTicker} 
-                      placeholder="e.g. OGDC" 
-                  />
-              </div> 
-          </div>
+  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Ticker</label>
+  <div className="relative">
+    <input 
+      type="text" 
+      value={ticker} 
+      onChange={(e) => setTicker(e.target.value.toUpperCase())}
+      placeholder="e.g. 786"
+      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-sm font-bold dark:text-slate-200 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+    />
+    <div className="absolute right-3 top-3 text-slate-400">
+      <SearchIcon size={16} />
+    </div>
+  </div>
+</div>
           <div className="mb-1"> 
               <div className="flex justify-between items-center mb-1"> <label className="block text-xs font-bold text-slate-500 dark:text-slate-400">Broker</label> {type === 'BUY' && !editingTransaction && freeCash !== undefined && ( <span className={`text-[10px] font-bold ${freeCash >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}> Buying Power: Rs. {freeCash.toLocaleString()} </span> )} </div> 
               <div className="relative"><select disabled value={selectedBrokerId} className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-sm font-bold text-slate-500 dark:text-slate-400 focus:outline-none appearance-none cursor-not-allowed">{brokers.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select><Lock className="absolute right-3 top-3.5 text-slate-400" size={16} /></div> 
