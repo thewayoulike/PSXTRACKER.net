@@ -237,3 +237,15 @@ export const hasValidSession = (): boolean => {
     const expiry = localStorage.getItem(STORAGE_EXPIRY_KEY);
     return !!expiry && Date.now() < parseInt(expiry) - 60000;
 };
+export const deleteUserData = async (email: string) => {
+    try {
+        const response = await fetch(`/api/delete/${encodeURIComponent(email)}`, {
+            method: 'DELETE'
+        });
+        const result = await response.json();
+        return result.success;
+    } catch (e) {
+        console.error("Delete failed", e);
+        return false;
+    }
+};
