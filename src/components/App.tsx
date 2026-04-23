@@ -48,6 +48,7 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>('DASHBOARD');
   const [viewTicker, setViewTicker] = useState<string | null>(null);
   const [allSymbols, setAllSymbols] = useState<string[]>([]);
+  const [marketSectors, setMarketSectors] = useState<Record<string, string>>({}); // <-- ADD THIS LINE
 
   const [brokers, setBrokers] = useState<Broker[]>(() => {
       try { const saved = localStorage.getItem('psx_brokers'); if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed) && parsed.length > 0) return parsed; } } catch (e) {} return [DEFAULT_BROKER];
@@ -99,7 +100,14 @@ const App: React.FC = () => {
   const isReadyToSave = useRef(false);
 
   const lastPriceUpdate = useMemo(() => { const times = Object.values(priceTimestamps); if (times.length === 0) return null; return times.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]; }, [priceTimestamps]);
-  const sectorMap = useMemo(() => { const map: Record<string, string> = {}; const uTickers = new Set(transactions.map(t => t.ticker)); uTickers.forEach(t => { map[t] = sectorOverrides[t] || getSector(t); }); return map; }, [transactions, sectorOverrides]);
+  const sectorMap = useMemo(() => { 
+      const map: Record<string, string> = { ...marketSectors }; // Load the live scraped sectors first
+      const uTickers = new Set(transactions.map(t => t.ticker)); 
+      uTickers.forEach(t => { 
+          map[t] = sectorOverrides[t] || map[t] || getSector(t); // Overrides > Scraped Live > Hardcoded Fallback
+      }); 
+      return map; 
+  }, [transactions, sectorOverrides, marketSectors]);
 
   const performLogout = useCallback(() => { setTransactions([]); setPortfolios([DEFAULT_PORTFOLIO]); setHoldings([]); setRealizedTrades([]); setManualPrices({}); setLdcpMap({}); setPriceTimestamps({}); setSectorOverrides({}); setBrokers([DEFAULT_BROKER]); setScannerState({}); setTradeScanResults([]); setUserApiKey(''); setUserScraperKey(''); setUserWebScrapingAIKey(''); setGeminiApiKey(null); setScrapingApiKey(null); setWebScrapingAIKey(null); setDriveUser(null); setGoogleSheetId(null); localStorage.clear(); signOutDrive(); isReadyToSave.current = false; }, []);
 
@@ -112,7 +120,14 @@ const App: React.FC = () => {
   useEffect(() => { if (userApiKey) setGeminiApiKey(userApiKey); if (userScraperKey) setScrapingApiKey(userScraperKey); if (userWebScrapingAIKey) setWebScrapingAIKey(userWebScrapingAIKey); }, [userApiKey, userScraperKey, userWebScrapingAIKey]);
   useEffect(() => { if (isCombinedView && combinedPortfolioIds.size === 0 && portfolios.length > 0) { setCombinedPortfolioIds(new Set(portfolios.map(p => p.id))); } }, [isCombinedView, portfolios, combinedPortfolioIds.size]);
 
-  useEffect(() => { fetchAllPSXSymbols().then(symbols => { if (symbols && symbols.length > 0) setAllSymbols(symbols); }); }, []);
+  useEffect(() => { 
+      fetchAllPSXSymbols().then(data => { 
+          if (data && Object.keys(data).length > 0) { 
+              setAllSymbols(Object.keys(data).sort()); 
+              setMarketSectors(data); 
+          } 
+      }); 
+  }, []);
 
   useEffect(() => {
       initDriveAuth(async (user) => {
