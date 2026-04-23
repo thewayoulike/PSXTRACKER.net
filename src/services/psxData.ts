@@ -241,6 +241,7 @@ export const fetchAllPSXSymbols = async (): Promise<{ symbols: string[], sectors
         }
     } catch (e) {}
 
+    // 2. FALLBACK: SCRAPE MARKET WATCH
     if (symbols.size === 0) {
         try {
             const targetUrl = `https://dps.psx.com.pk/market-watch`;
@@ -254,25 +255,52 @@ export const fetchAllPSXSymbols = async (): Promise<{ symbols: string[], sectors
                 tables.forEach(table => {
                     const rows = table.querySelectorAll("tr");
                     let currentGroupHeader = "Unknown Sector";
+                    let symCol = 0;
+                    let secCol = -1; // NEW: Track the Sector Code column
+
+                    // Find where the Sector column is
+                    if (rows.length > 0) {
+                        const headers = rows[0].querySelectorAll("th, td");
+                        headers.forEach((h, idx) => {
+                            const txt = h.textContent?.trim().toUpperCase() || "";
+                            if (txt === 'SYMBOL' || txt === 'SCRIP') symCol = idx;
+                            if (txt === 'SECTOR') secCol = idx;
+                        });
+                    }
 
                     rows.forEach((row, rIdx) => {
                         if (rIdx === 0) return; 
                         const cells = row.querySelectorAll("td, th");
+                        
+                        // Check for grouped rows
                         if (cells.length === 1 || (cells.length > 0 && cells.length < 4)) {
                             let text = cells[0]?.textContent?.trim() || "";
                             text = text.replace(/[\n\r\t]/g, '').trim();
-                            if (text && text.length > 2 && !TICKER_BLACKLIST.includes(text.toUpperCase())) currentGroupHeader = text;
+                            if (text && text.length > 2 && !TICKER_BLACKLIST.includes(text.toUpperCase())) {
+                                currentGroupHeader = text;
+                            }
                             return;
                         }
-                        if (cells.length < 2) return;
-                        const symCell = cells[0];
+
+                        if (cells.length <= symCol) return;
+
+                        const symCell = cells[symCol];
                         let symbol = symCell.querySelector('a')?.textContent?.trim().toUpperCase() || symCell.textContent?.trim().toUpperCase();
 
                         if (symbol) {
                             symbol = symbol.split(/[\s-]/)[0];
                             if (symbol.length >= 2 && symbol.length <= 8 && !TICKER_BLACKLIST.includes(symbol) && isNaN(Number(symbol))) {
                                 symbols.add(symbol);
-                                sectorsMap[symbol] = SECTOR_CODE_MAP[currentGroupHeader] || currentGroupHeader;
+                                
+                                // NEW: Try to get the sector code from the column first!
+                                let sectorText = currentGroupHeader;
+                                if (secCol !== -1 && cells.length > secCol) {
+                                    const colText = cells[secCol].textContent?.trim();
+                                    if (colText) sectorText = colText;
+                                }
+
+                                // Map it using your dictionary
+                                sectorsMap[symbol] = SECTOR_CODE_MAP[sectorText.toUpperCase()] || sectorText;
                             }
                         }
                     });
