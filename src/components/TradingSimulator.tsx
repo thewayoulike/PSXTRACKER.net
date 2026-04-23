@@ -17,7 +17,7 @@ interface SimBuy { id: string; quantity: number; price: number; }
 interface SimSell { id: string; quantity: number; price: number; isIntraday: boolean; }
 
 export const TradingSimulator: React.FC<TradingSimulatorProps> = ({ 
-    holdings, brokers, defaultBrokerId, transactions = [], allSymbols = [], currentPrices = {} 
+  holdings, brokers, defaultBrokerId, transactions = [], allSymbols = [], currentPrices = {} 
 }) => {
   const [selectedTicker, setSelectedTicker] = useState<string>('');
   const [buyPositions, setBuyPositions] = useState<SimBuy[]>([]);
@@ -137,9 +137,12 @@ export const TradingSimulator: React.FC<TradingSimulatorProps> = ({
     <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-5 duration-700">
       
       {/* HEADER: SELECTOR & TARGET PRICE */}
-      <Card className="p-6">
+      {/* FIX: Added !overflow-visible relative z-50 so the dropdown can escape the Card boundary */}
+      <Card className="p-6 !overflow-visible relative z-50">
         <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="w-full md:w-1/3">
+          
+          {/* FIX: Added relative z-[100] to give the search dropdown the highest priority stacking context */}
+          <div className="w-full md:w-1/3 relative z-[100]">
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Select Stock</label>
             <TickerSearch 
                 value={selectedTicker} 
