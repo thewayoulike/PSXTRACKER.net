@@ -1,3 +1,4 @@
+/* Build Time: Sat Apr 25 01:48:02 CEST 2026 */
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Transaction, Holding, PortfolioStats, RealizedTrade, Portfolio, Broker, FoundDividend, EditableTrade } from '../types';
 import { Dashboard } from './DashboardStats';
