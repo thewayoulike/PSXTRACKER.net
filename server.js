@@ -5,7 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import AdmZip from 'adm-zip';
 import { exec } from 'child_process';
-import cron from 'node-cron'; // <-- NEW: The background timer
+import cron from 'node-cron';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,7 +21,6 @@ const db = new Database(DB_PATH);
 db.serialize(() => {
     db.run("CREATE TABLE IF NOT EXISTS user_data (email TEXT PRIMARY KEY, data TEXT)");
     db.run("CREATE TABLE IF NOT EXISTS historical_prices (ticker TEXT, price REAL, date TEXT, PRIMARY KEY(ticker, date))");
-    // NEW: Table to store the 24/7 live prices for your future notification system
     db.run("CREATE TABLE IF NOT EXISTS live_prices (ticker TEXT PRIMARY KEY, price REAL, updated_at TEXT)");
 });
 
@@ -32,33 +31,30 @@ const cleanTicker = (rawName) => {
     return name.trim();
 };
 
+// --- FIX: FETCH KSE100 FROM YAHOO FINANCE INSTEAD OF DEAD PSX API ---
 const fetchKse100 = async () => {
-    console.log("[SYNC] Fetching KSE100 Index...");
+    console.log("[SYNC] Fetching KSE100 Index from Yahoo Finance...");
     try {
-        const resp = await fetch('https://dps.psx.com.pk/timeseries/daily/KSE100', {
-            headers: { 
-                'User-Agent': 'Mozilla/5.0', 
-                'Referer': 'https://dps.psx.com.pk/',
-                'X-Requested-With': 'XMLHttpRequest'
-            }
+        const resp = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EKSE?interval=1d&range=3mo', {
+            headers: { 'User-Agent': 'Mozilla/5.0' }
         });
         const json = await resp.json();
-        const dataRows = json.data || [];
+        const result = json.chart.result[0];
+        const timestamps = result.timestamp;
+        const closes = result.indicators.quote[0].close;
 
-        if (dataRows.length > 0) {
-            const recent = dataRows.slice(-35);
+        if (timestamps && timestamps.length > 0) {
             db.serialize(() => {
                 db.run("BEGIN TRANSACTION");
                 const stmt = db.prepare("INSERT OR REPLACE INTO historical_prices (ticker, price, date) VALUES (?, ?, ?)");
-                recent.forEach(item => {
-                    let ts = parseInt(item[0]);
-                    if (ts > 10000000000) ts /= 1000;
-                    const dateStr = new Date(ts * 1000).toISOString().split('T')[0];
-                    const closePrice = parseFloat(item[4]);
-                    if (!isNaN(closePrice)) stmt.run('KSE100', closePrice, dateStr);
-                });
+                for (let i = 0; i < timestamps.length; i++) {
+                    if (closes[i] !== null && !isNaN(closes[i])) {
+                        const dateStr = new Date(timestamps[i] * 1000).toISOString().split('T')[0];
+                        stmt.run('KSE100', closes[i], dateStr);
+                    }
+                }
                 stmt.finalize();
-                db.run("COMMIT");
+                db.run("COMMIT", (err) => { if (!err) console.log(`[OK] KSE100 updated from Yahoo Finance.`); });
             });
         }
     } catch (e) { console.error("[ERROR] KSE100 Fetch failed:", e.message); }
@@ -96,7 +92,6 @@ const downloadAndParseZip = async (date) => {
 };
 
 // --- ROUTES ---
-
 app.get('/quotes/:symbol/:range', (req, res) => {
     const sym = cleanTicker(req.params.symbol);
     db.all("SELECT price, date FROM historical_prices WHERE ticker = ? ORDER BY date ASC", [sym], (err, rows) => {
@@ -128,12 +123,10 @@ app.post('/save', (req, res) => {
 });
 
 // --- SERVER STARTUP AND BACKGROUND WORKERS ---
-
 const startServer = () => {
     app.listen(port, "0.0.0.0", async () => {
         console.log(`Backend Server running on port ${port}`);
         
-        // 1. Initial Historical Data Fetch
         await fetchKse100();
         const today = new Date();
         for (let i = 0; i < 40; i++) {
@@ -141,42 +134,24 @@ const startServer = () => {
             await downloadAndParseZip(d);
         }
 
-        // 2. Schedule Daily Historical Data Fetch (Every day at 5:00 PM PKT)
         cron.schedule('0 17 * * *', async () => {
             console.log("[CRON] Running daily historical zip fetch at 5:00 PM PKT");
             await fetchKse100();
             await downloadAndParseZip(new Date()); 
         }, { timezone: "Asia/Karachi" });
 
-        // 3. NEW: Background Worker for Live Prices & Notifications (Every 3 minutes, Mon-Fri)
         cron.schedule('*/3 * * * 1-5', async () => {
-            // Check exact PKT time to enforce 9:15 to 16:30 Market Hours
             const pkt = new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" });
             const date = new Date(pkt);
             const h = date.getHours();
             const m = date.getMinutes();
+            if (h < 9 || (h === 9 && m < 15) || h > 16 || (h === 16 && m > 30)) { return; }
             
-            // If market is closed, do nothing
-            if (h < 9 || (h === 9 && m < 15) || h > 16 || (h === 16 && m > 30)) {
-                return; 
-            }
-
             console.log("[BACKGROUND] Fetching live market data (Ready for Notifications)...");
-            
             try {
-                // Here we fetch the data in the background
                 const res = await fetch('https://dps.psx.com.pk/market-watch', { headers: { 'Referer': 'https://dps.psx.com.pk/' } });
                 const html = await res.text();
-                
-                // LATER: This is exactly where you will add the code to:
-                // 1. Parse the HTML for prices
-                // 2. Save them to the 'live_prices' database table
-                // 3. Check if any price dropped below a user's alert threshold
-                // 4. Send the notification email/SMS!
-                
-            } catch (err) {
-                console.error("[BACKGROUND] Failed to fetch live prices:", err.message);
-            }
+            } catch (err) { console.error("[BACKGROUND] Failed to fetch live prices:", err.message); }
         }, { timezone: "Asia/Karachi" });
 
     });
