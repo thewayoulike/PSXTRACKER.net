@@ -112,7 +112,6 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
       if (onSaveScannedTrades) onSaveScannedTrades(trades);
   };
 
-  // --- FIX: Included Dividends, Deposits, and Taxes in the Net Flow Math ---
   const scanTotals = useMemo(() => {
       let totalBuy = 0;
       let totalSell = 0;
@@ -122,10 +121,10 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
           
           if (t.type === 'BUY') totalBuy += (val + fees);
           else if (t.type === 'SELL') totalSell += (val - fees);
-          else if (t.type === 'DIVIDEND') totalSell += (val - (Number(t.tax)||0)); // Income
-          else if (t.type === 'DEPOSIT') totalSell += val; // Inflow
-          else if (t.type === 'WITHDRAWAL') totalBuy += val; // Outflow
-          else if (t.type === 'TAX') totalBuy += val; // Outflow
+          else if (t.type === 'DIVIDEND') totalSell += (val - (Number(t.tax)||0));
+          else if (t.type === 'DEPOSIT') totalSell += val;
+          else if (t.type === 'WITHDRAWAL') totalBuy += val;
+          else if (t.type === 'TAX') totalBuy += val;
       });
       return { totalBuy, totalSell, net: totalSell - totalBuy };
   }, [savedScannedTrades]);
@@ -304,7 +303,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
       onAddTransaction({ 
           ticker: trade.ticker, 
           type: trade.type as any, 
-          quantity: Number(trade.quantity) || 1, // Fallback for deposits
+          quantity: Number(trade.quantity) || 1, 
           price: Number(trade.price), 
           date: trade.date || new Date().toISOString().split('T')[0], 
           broker: finalBrokerName, 
@@ -316,31 +315,24 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
       }); 
   };
   
-  // --- FIX: Removed Strict Check for Bulk Imports ---
   const handleAcceptTrade = (trade: EditableTrade) => { 
     setFormError(null); 
-    // We removed the cost check here so historical imports are never blocked
     addSingleTrade(trade); 
     updateScannedTrades(savedScannedTrades.filter(t => t !== trade)); 
-};
+  };
 
-const handleAcceptSelected = () => { 
+  const handleAcceptSelected = () => { 
     setFormError(null); 
     const selectedTrades = savedScannedTrades.filter((_, i) => selectedScanIndices.has(i)); 
-    
-    // This allows all 36 trades to be added regardless of current cash
     selectedTrades.forEach(addSingleTrade); 
-    
     updateScannedTrades(savedScannedTrades.filter((_, i) => !selectedScanIndices.has(i))); 
     setSelectedScanIndices(new Set()); 
-};
+  };
   
   const updateSingleScannedTrade = (index: number, field: keyof EditableTrade, value: any) => { const updated = [...savedScannedTrades]; updated[index] = { ...updated[index], [field]: value }; updateScannedTrades(updated); };
   const getFileIcon = () => { if (selectedFile) { const isSheet = selectedFile.name.endsWith('.csv') || selectedFile.name.endsWith('.xlsx') || selectedFile.name.endsWith('.xls'); if (isSheet) return <FileSpreadsheet size={32} />; return <FileText size={32} />; } if (mode === 'AI_SCAN') return <Sparkles size={32} className="text-indigo-500" />; if (mode === 'IMPORT') return <Upload size={32} className="text-blue-500" />; if (mode === 'EMAIL_IMPORT') return <Mail size={32} className="text-rose-500" />; return <ScanText size={32} className="text-emerald-500" />; };
   const getThemeColor = () => { if (mode === 'AI_SCAN') return { btn: 'bg-indigo-500 hover:bg-indigo-600', text: 'text-indigo-600', shadow: 'shadow-indigo-200', bg: 'bg-indigo-50/50', border: 'border-indigo-400' }; if (mode === 'IMPORT') return { btn: 'bg-blue-500 hover:bg-blue-600', text: 'text-blue-600', shadow: 'shadow-blue-200', bg: 'bg-blue-50/50', border: 'border-blue-400' }; return { btn: 'bg-emerald-500 hover:bg-emerald-600', text: 'text-emerald-600', shadow: 'shadow-emerald-200', bg: 'bg-emerald-50', border: 'border-emerald-200' }; };
   const theme = getThemeColor();
-
-  if (!isOpen) return null;
 
   const renderFormContent = () => {
     if (type === 'TAX') {
@@ -401,43 +393,67 @@ const handleAcceptSelected = () => {
         );
     }
 
-    return (
+   return (
       <>
-          <div className="grid grid-cols-2 gap-4"> 
-              <div><label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Date</label><input required type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-sm dark:text-slate-200 focus:ring-2 focus:ring-emerald-500/20 outline-none dark:color-scheme-dark"/></div> 
-              
-              <div>
-  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Ticker</label>
-  <div className="relative">
-    <input 
-      type="text" 
-      value={ticker} 
-      onChange={(e) => setTicker(e.target.value.toUpperCase())}
-      placeholder="e.g. 786"
-      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-sm font-bold dark:text-slate-200 focus:ring-2 focus:ring-emerald-500/20 outline-none"
-    />
-    <div className="absolute right-3 top-3 text-slate-400">
-      <SearchIcon size={16} />
-    </div>
-  </div>
-</div>
-          <div className="mb-1"> 
-              <div className="flex justify-between items-center mb-1"> <label className="block text-xs font-bold text-slate-500 dark:text-slate-400">Broker</label> {type === 'BUY' && !editingTransaction && freeCash !== undefined && ( <span className={`text-[10px] font-bold ${freeCash >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}> Buying Power: Rs. {freeCash.toLocaleString()} </span> )} </div> 
-              <div className="relative"><select disabled value={selectedBrokerId} className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-sm font-bold text-slate-500 dark:text-slate-400 focus:outline-none appearance-none cursor-not-allowed">{brokers.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select><Lock className="absolute right-3 top-3.5 text-slate-400" size={16} /></div> 
+        <div className="grid grid-cols-2 gap-4"> 
+          <div>
+            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Date</label>
+            <input required type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-sm dark:text-slate-200 focus:ring-2 focus:ring-emerald-500/20 outline-none dark:color-scheme-dark"/>
+          </div> 
+          
+          <div>
+            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Ticker</label>
+            <TickerSearch 
+              value={ticker} 
+              options={allSymbols} 
+              onChange={setTicker} 
+              placeholder="e.g. 786" 
+            />
           </div>
-          <div className="grid grid-cols-2 gap-4"> 
-              <div><label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">{type === 'DIVIDEND' ? 'Eligible Shares' : 'Quantity'}</label><input required type="number" value={quantity} onChange={e=>setQuantity(Number(e.target.value))} className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-sm dark:text-slate-200 focus:ring-2 focus:ring-emerald-500/20 outline-none" placeholder="0"/></div> 
-              <div><label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">{type === 'DIVIDEND' ? 'Dividend Amount (DPS)' : 'Price'}</label><input required type="number" step="0.01" value={price} onChange={e=>setPrice(Number(e.target.value))} className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-sm dark:text-slate-200 focus:ring-2 focus:ring-emerald-500/20 outline-none" placeholder="0.00"/></div> 
+        </div>
+
+        <div className="mb-1 mt-4"> 
+          <div className="flex justify-between items-center mb-1"> 
+            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400">Broker</label> 
+            {type === 'BUY' && !editingTransaction && freeCash !== undefined && ( 
+              <span className={`text-[10px] font-bold ${freeCash >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}> 
+                Buying Power: Rs. {freeCash.toLocaleString()} 
+              </span> 
+            )} 
+          </div> 
+          <div className="relative">
+            <select disabled value={selectedBrokerId} className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-sm font-bold text-slate-500 dark:text-slate-400 focus:outline-none appearance-none cursor-not-allowed">
+              {brokers.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+            <Lock className="absolute right-3 top-3.5 text-slate-400" size={16} />
+          </div> 
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 mt-4"> 
+          <div>
+            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">{type === 'DIVIDEND' ? 'Eligible Shares' : 'Quantity'}</label>
+            <input required type="number" value={quantity} onChange={e=>setQuantity(Number(e.target.value))} className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-sm dark:text-slate-200 focus:ring-2 focus:ring-emerald-500/20 outline-none" placeholder="0"/>
+          </div> 
+          <div>
+            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">{type === 'DIVIDEND' ? 'Dividend Amount (DPS)' : 'Price'}</label>
+            <input required type="number" step="0.01" value={price} onChange={e=>setPrice(Number(e.target.value))} className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-sm dark:text-slate-200 focus:ring-2 focus:ring-emerald-500/20 outline-none" placeholder="0.00"/>
+          </div> 
+        </div>
+
+        <div className="pt-4">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase">Fees & Taxes</label>
+            <button type="button" onClick={() => setIsAutoCalc(!isAutoCalc)} className={`text-[10px] px-2 py-1 rounded border flex items-center gap-1 transition-colors ${isAutoCalc ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-800' : 'bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800 font-bold shadow-sm'}`}> 
+              {!isAutoCalc && <AlertTriangle size={10} />} {isAutoCalc ? 'Auto-Calc On' : 'Manual Mode'} 
+            </button>
           </div>
-          <div className="pt-2">
-              <div className="flex items-center justify-between mb-2"><label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase">Fees & Taxes</label><button type="button" onClick={() => setIsAutoCalc(!isAutoCalc)} className={`text-[10px] px-2 py-1 rounded border flex items-center gap-1 transition-colors ${isAutoCalc ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-800' : 'bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800 font-bold shadow-sm'}`}> {!isAutoCalc && <AlertTriangle size={10} />} {isAutoCalc ? 'Auto-Calc On' : 'Manual Mode'} </button></div>
-              <div className="grid grid-cols-2 gap-3 bg-slate-50 dark:bg-slate-800 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
-                  <div><label className="text-[10px] text-slate-400 dark:text-slate-500 block mb-1">Commission</label><input type="number" step="any" value={commission} onChange={e=>setCommission(Number(e.target.value))} disabled={type === 'DIVIDEND' && isAutoCalc} className="w-full bg-white dark:bg-slate-900 text-xs p-2 rounded border border-slate-200 dark:border-slate-700 disabled:bg-slate-100 dark:disabled:bg-slate-800 dark:text-slate-300"/></div>
-                  <div><label className="text-[10px] text-slate-400 dark:text-slate-500 block mb-1">Tax / WHT</label><input type="number" step="any" value={tax} onChange={e=>setTax(Number(e.target.value))} className="w-full bg-white dark:bg-slate-900 text-xs p-2 rounded border border-slate-200 dark:border-slate-700 dark:text-slate-300"/></div>
-                  <div><label className="text-[10px] text-slate-400 dark:text-slate-500 block mb-1">CDC Charges</label><input type="number" step="any" value={cdcCharges} onChange={e=>setCdcCharges(Number(e.target.value))} disabled={type === 'DIVIDEND' && isAutoCalc} className="w-full bg-white dark:bg-slate-900 text-xs p-2 rounded border border-slate-200 dark:border-slate-700 disabled:bg-slate-100 dark:disabled:bg-slate-800 dark:text-slate-300"/></div>
-                  <div> <label className="text-[10px] text-slate-400 dark:text-slate-500 block mb-1"> {type === 'DIVIDEND' ? 'Other Charges' : 'Other Fees'} </label> <input type="number" step="any" value={otherFees} onChange={e=>setOtherFees(Number(e.target.value))} className="w-full bg-white dark:bg-slate-900 text-xs p-2 rounded border border-slate-200 dark:border-slate-700 dark:text-slate-300" /> </div>
-              </div>
+          <div className="grid grid-cols-2 gap-3 bg-slate-50 dark:bg-slate-800 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+            <div><label className="text-[10px] text-slate-400 dark:text-slate-500 block mb-1">Commission</label><input type="number" step="any" value={commission} onChange={e=>setCommission(Number(e.target.value))} disabled={type === 'DIVIDEND' && isAutoCalc} className="w-full bg-white dark:bg-slate-900 text-xs p-2 rounded border border-slate-200 dark:border-slate-700 disabled:bg-slate-100 dark:disabled:bg-slate-800 dark:text-slate-300"/></div>
+            <div><label className="text-[10px] text-slate-400 dark:text-slate-500 block mb-1">Tax / WHT</label><input type="number" step="any" value={tax} onChange={e=>setTax(Number(e.target.value))} className="w-full bg-white dark:bg-slate-900 text-xs p-2 rounded border border-slate-200 dark:border-slate-700 dark:text-slate-300"/></div>
+            <div><label className="text-[10px] text-slate-400 dark:text-slate-500 block mb-1">CDC Charges</label><input type="number" step="any" value={cdcCharges} onChange={e=>setCdcCharges(Number(e.target.value))} disabled={type === 'DIVIDEND' && isAutoCalc} className="w-full bg-white dark:bg-slate-900 text-xs p-2 rounded border border-slate-200 dark:border-slate-700 disabled:bg-slate-100 dark:disabled:bg-slate-800 dark:text-slate-300"/></div>
+            <div><label className="text-[10px] text-slate-400 dark:text-slate-500 block mb-1">{type === 'DIVIDEND' ? 'Other Charges' : 'Other Fees'}</label><input type="number" step="any" value={otherFees} onChange={e=>setOtherFees(Number(e.target.value))} className="w-full bg-white dark:bg-slate-900 text-xs p-2 rounded border border-slate-200 dark:border-slate-700 dark:text-slate-300" /></div>
           </div>
+        </div>
       </>
     );
   };
@@ -445,7 +461,6 @@ const handleAcceptSelected = () => {
   if (!isOpen) return null;
 
   return (
-    // MODAL CONTAINER: Top Aligned
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-start justify-center p-4 pt-16 md:pt-24 overflow-y-auto">
       <div className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full flex flex-col max-h-[90vh] transition-all duration-300 ${savedScannedTrades.length > 0 ? 'max-w-6xl' : 'max-w-md'}`}>
         
@@ -459,11 +474,11 @@ const handleAcceptSelected = () => {
         {!editingTransaction && (
             <div className="px-6 pt-6">
                 <div className="flex bg-slate-50 dark:bg-slate-800 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 mb-6 overflow-x-auto no-scrollbar">
-                    <button onClick={() => setMode('MANUAL')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all whitespace-nowrap ${mode === 'MANUAL' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-800 dark:text-slate-100' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}> <Keyboard size={16} /> Manual </button>
-                    <button onClick={() => setMode('IMPORT')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all whitespace-nowrap ${mode === 'IMPORT' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}> <FileSpreadsheet size={16} /> Import </button>
-                    <button onClick={() => setMode('AI_SCAN')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all whitespace-nowrap ${mode === 'AI_SCAN' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}> <Sparkles size={16} /> AI Scan </button>
-                    <button onClick={() => setMode('EMAIL_IMPORT')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all whitespace-nowrap ${mode === 'EMAIL_IMPORT' ? 'bg-white dark:bg-slate-700 shadow-sm text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}> <Mail size={16} /> Email </button>
-                    <button onClick={() => setMode('OCR_SCAN')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all whitespace-nowrap ${mode === 'OCR_SCAN' ? 'bg-white dark:bg-slate-700 shadow-sm text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}> <ScanText size={16} /> OCR </button>
+                    <button type="button" onClick={() => setMode('MANUAL')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all whitespace-nowrap ${mode === 'MANUAL' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-800 dark:text-slate-100' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}> <Keyboard size={16} /> Manual </button>
+                    <button type="button" onClick={() => setMode('IMPORT')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all whitespace-nowrap ${mode === 'IMPORT' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}> <FileSpreadsheet size={16} /> Import </button>
+                    <button type="button" onClick={() => setMode('AI_SCAN')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all whitespace-nowrap ${mode === 'AI_SCAN' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}> <Sparkles size={16} /> AI Scan </button>
+                    <button type="button" onClick={() => setMode('EMAIL_IMPORT')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all whitespace-nowrap ${mode === 'EMAIL_IMPORT' ? 'bg-white dark:bg-slate-700 shadow-sm text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}> <Mail size={16} /> Email </button>
+                    <button type="button" onClick={() => setMode('OCR_SCAN')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all whitespace-nowrap ${mode === 'OCR_SCAN' ? 'bg-white dark:bg-slate-700 shadow-sm text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}> <ScanText size={16} /> OCR </button>
                 </div>
             </div>
         )}
@@ -519,6 +534,7 @@ const handleAcceptSelected = () => {
                                     </div>
                                 </div>
                                 <button 
+                                    type="button"
                                     onClick={() => handleEmailSearch()} 
                                     disabled={loadingEmails}
                                     className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 rounded-lg text-xs flex items-center justify-center gap-2 transition-all"
@@ -545,6 +561,7 @@ const handleAcceptSelected = () => {
                                         <div className="space-y-1.5">
                                             {msg.attachments.map((att: any) => (
                                                 <button 
+                                                    type="button"
                                                     key={att.id}
                                                     onClick={() => handleSelectAttachment(msg.id, att)}
                                                     disabled={downloadingAttachment}
@@ -591,11 +608,11 @@ const handleAcceptSelected = () => {
                                  </p>
                              </div>
                              
-                             {mode === 'IMPORT' && !selectedFile && !scanError && ( <button onClick={handleDownloadTemplate} className="mt-4 flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 font-bold hover:underline mx-auto opacity-80 hover:opacity-100 transition-opacity" > <Download size={14} /> Download Import Template (CSV) </button> )}
+                             {mode === 'IMPORT' && !selectedFile && !scanError && ( <button type="button" onClick={handleDownloadTemplate} className="mt-4 flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 font-bold hover:underline mx-auto opacity-80 hover:opacity-100 transition-opacity" > <Download size={14} /> Download Import Template (CSV) </button> )}
                             
-                             {scanError && ( <div className={`w-full flex-1 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center p-8 animate-in fade-in zoom-in-95 ${scanError.includes("No trades found") ? "border-amber-200 bg-amber-50/50 dark:bg-amber-900/20 dark:border-amber-800" : "border-rose-200 bg-rose-50/50 dark:bg-rose-900/20 dark:border-rose-800"}`}> <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 shadow-sm ${scanError.includes("No trades found") ? "bg-amber-100 text-amber-600 dark:bg-amber-900 dark:text-amber-400" : "bg-rose-100 text-rose-500 dark:bg-rose-900 dark:text-rose-400"}`}> {scanError.includes("No trades found") ? <Search size={32} /> : <AlertTriangle size={32} />} </div> <h3 className={`text-lg font-bold mb-1 ${scanError.includes("No trades found") ? "text-amber-800 dark:text-amber-200" : "text-rose-700 dark:text-rose-200"}`}>{scanError.includes("No trades found") ? "No Results Found" : "Scan Failed"}</h3> <p className={`text-sm font-medium text-center max-w-[240px] mb-6 ${scanError.includes("No trades found") ? "text-amber-600 dark:text-amber-300" : "text-rose-500 dark:text-rose-300"}`}>{scanError}</p> <button onClick={() => { setScanError(null); setSelectedFile(null); }} className={`px-6 py-2.5 bg-white dark:bg-slate-800 border rounded-xl font-bold text-sm shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2 ${scanError.includes("No trades found") ? "border-amber-200 text-amber-600 dark:border-amber-700 dark:text-amber-400" : "border-rose-200 text-rose-600 dark:border-rose-700 dark:text-rose-400"}`}> <RefreshCcw size={16} /> Try Different File </button> </div> )}
+                             {scanError && ( <div className={`w-full flex-1 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center p-8 animate-in fade-in zoom-in-95 ${scanError.includes("No trades found") ? "border-amber-200 bg-amber-50/50 dark:bg-amber-900/20 dark:border-amber-800" : "border-rose-200 bg-rose-50/50 dark:bg-rose-900/20 dark:border-rose-800"}`}> <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 shadow-sm ${scanError.includes("No trades found") ? "bg-amber-100 text-amber-600 dark:bg-amber-900 dark:text-amber-400" : "bg-rose-100 text-rose-500 dark:bg-rose-900 dark:text-rose-400"}`}> {scanError.includes("No trades found") ? <Search size={32} /> : <AlertTriangle size={32} />} </div> <h3 className={`text-lg font-bold mb-1 ${scanError.includes("No trades found") ? "text-amber-800 dark:text-amber-200" : "text-rose-700 dark:text-rose-200"}`}>{scanError.includes("No trades found") ? "No Results Found" : "Scan Failed"}</h3> <p className={`text-sm font-medium text-center max-w-[240px] mb-6 ${scanError.includes("No trades found") ? "text-amber-600 dark:text-amber-300" : "text-rose-500 dark:text-rose-300"}`}>{scanError}</p> <button type="button" onClick={() => { setScanError(null); setSelectedFile(null); }} className={`px-6 py-2.5 bg-white dark:bg-slate-800 border rounded-xl font-bold text-sm shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2 ${scanError.includes("No trades found") ? "border-amber-200 text-amber-600 dark:border-amber-700 dark:text-amber-400" : "border-rose-200 text-rose-600 dark:border-rose-700 dark:text-rose-400"}`}> <RefreshCcw size={16} /> Try Different File </button> </div> )}
                             
-                             {!scanError && ( <button onClick={handleProcessScan} disabled={!selectedFile} className={`w-full mt-6 py-3.5 rounded-xl font-bold text-white shadow-lg transition-all flex items-center justify-center gap-2 ${selectedFile ? `${theme.btn} ${theme.shadow} cursor-pointer` : 'bg-slate-300 dark:bg-slate-700 text-slate-100 dark:text-slate-500 cursor-not-allowed shadow-none'}`}> {mode === 'AI_SCAN' ? <Sparkles size={18} /> : mode === 'IMPORT' ? <Upload size={18} /> : <ScanText size={18} />} {mode === 'AI_SCAN' ? 'Analyze with AI' : mode === 'IMPORT' ? 'Process Import' : 'Extract Text'} </button> )}
+                             {!scanError && ( <button type="button" onClick={handleProcessScan} disabled={!selectedFile} className={`w-full mt-6 py-3.5 rounded-xl font-bold text-white shadow-lg transition-all flex items-center justify-center gap-2 ${selectedFile ? `${theme.btn} ${theme.shadow} cursor-pointer` : 'bg-slate-300 dark:bg-slate-700 text-slate-100 dark:text-slate-500 cursor-not-allowed shadow-none'}`}> {mode === 'AI_SCAN' ? <Sparkles size={18} /> : mode === 'IMPORT' ? <Upload size={18} /> : <ScanText size={18} />} {mode === 'AI_SCAN' ? 'Analyze with AI' : mode === 'IMPORT' ? 'Process Import' : 'Extract Text'} </button> )}
                         </>
                     )}
 
@@ -607,6 +624,7 @@ const handleAcceptSelected = () => {
                                 <h3 className="font-bold text-slate-800 dark:text-slate-200 text-lg">Found {savedScannedTrades.length} Trades</h3>
                                 <div className="flex items-center gap-2">
                                     <button 
+                                        type="button"
                                         onClick={handleAutoFillFees}
                                         className="text-xs bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 border border-indigo-200 dark:border-indigo-700 hover:border-indigo-300 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all shadow-sm"
                                         title="Recalculate fees based on your broker settings"
@@ -614,8 +632,8 @@ const handleAcceptSelected = () => {
                                         <Calculator size={14} /> Auto-Fill Fees
                                     </button>
 
-                                    {selectedScanIndices.size > 0 && ( <button onClick={handleAcceptSelected} className="text-xs bg-emerald-600 text-white hover:bg-emerald-700 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 transition-all shadow-sm"> <Plus size={14} /> Add Selected ({selectedScanIndices.size}) </button> )}
-                                    <button onClick={() => { updateScannedTrades([]); setSelectedFile(null); setSelectedScanIndices(new Set()); }} className="text-xs text-rose-500 hover:text-rose-600 font-bold flex items-center gap-1 px-2 py-1.5 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-all"> <RefreshCcw size={12} /> Clear All </button>
+                                    {selectedScanIndices.size > 0 && ( <button type="button" onClick={handleAcceptSelected} className="text-xs bg-emerald-600 text-white hover:bg-emerald-700 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 transition-all shadow-sm"> <Plus size={14} /> Add Selected ({selectedScanIndices.size}) </button> )}
+                                    <button type="button" onClick={() => { updateScannedTrades([]); setSelectedFile(null); setSelectedScanIndices(new Set()); }} className="text-xs text-rose-500 hover:text-rose-600 font-bold flex items-center gap-1 px-2 py-1.5 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-all"> <RefreshCcw size={12} /> Clear All </button>
                                 </div>
                             </div>
 
@@ -639,7 +657,7 @@ const handleAcceptSelected = () => {
                             <div className="flex-1 overflow-auto border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 shadow-sm">
                                 <table className="w-full text-left border-collapse min-w-[1000px]">
                                     <thead> <tr className="bg-slate-50 dark:bg-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-700"> <th className="px-3 py-3 text-center w-10"> <input type="checkbox" onChange={toggleSelectAll} checked={selectedScanIndices.size === savedScannedTrades.length && savedScannedTrades.length > 0} className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500 cursor-pointer"/> </th> <th className="px-3 py-3">Type</th> <th className="px-3 py-3">Date</th> <th className="px-3 py-3">Ticker</th> <th className="px-3 py-3">Broker</th> <th className="px-3 py-3 w-24">Qty</th> <th className="px-3 py-3 w-24">Price</th> <th className="px-2 py-3 w-20 text-slate-400">Comm</th> <th className="px-2 py-3 w-20 text-slate-400">Tax</th> <th className="px-2 py-3 w-20 text-slate-400">CDC</th> <th className="px-2 py-3 w-20 text-slate-400">Other</th> <th className="px-3 py-3 text-center">Action</th> </tr> </thead>
-                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700"> {savedScannedTrades.map((t, idx) => ( <tr key={idx} className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors group ${selectedScanIndices.has(idx) ? 'bg-indigo-50/40 dark:bg-indigo-900/20' : ''}`}> <td className="px-3 py-2 text-center"> <input type="checkbox" checked={selectedScanIndices.has(idx)} onChange={() => toggleScanSelection(idx)} className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500 cursor-pointer"/> </td> <td className="px-3 py-2"><span className={`text-[10px] font-bold px-2 py-1 rounded border ${t.type === 'BUY' ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-800' : 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-800'}`}>{t.type}</span></td> <td className="px-3 py-2"><input type="date" value={t.date || ''} onChange={(e) => updateSingleScannedTrade(idx, 'date', e.target.value)} className="w-24 bg-transparent text-xs font-medium text-slate-700 dark:text-slate-300 outline-none border-b border-transparent focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 transition-all" /></td> <td className="px-3 py-2"><input type="text" value={t.ticker} onChange={(e) => updateSingleScannedTrade(idx, 'ticker', e.target.value.toUpperCase())} className="w-16 bg-transparent text-xs font-bold text-slate-800 dark:text-slate-200 outline-none border-b border-transparent focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 uppercase transition-all" /></td> <td className="px-3 py-2"><select disabled value={t.brokerId || ''} onChange={(e) => updateSingleScannedTrade(idx, 'brokerId', e.target.value)} className="w-24 bg-transparent text-xs text-slate-500 dark:text-slate-400 outline-none border-b border-transparent appearance-none truncate cursor-not-allowed bg-slate-100 dark:bg-slate-800"><option value="">{t.broker || 'Select'}</option>{brokers.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></td> <td className="px-3 py-2"><input type="number" value={t.quantity} onChange={(e) => updateSingleScannedTrade(idx, 'quantity', Number(e.target.value))} className="w-full bg-transparent text-xs font-medium text-slate-700 dark:text-slate-300 outline-none border-b border-transparent focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 transition-all" placeholder="0" /></td> <td className="px-3 py-2"><input type="number" step="0.01" value={t.price} onChange={(e) => updateSingleScannedTrade(idx, 'price', Number(e.target.value))} className="w-full bg-transparent text-xs font-medium text-slate-700 dark:text-slate-300 outline-none border-b border-transparent focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 transition-all" placeholder="0.00" /></td> <td className="px-2 py-2"><input type="number" step="any" value={t.commission || ''} onChange={(e) => updateSingleScannedTrade(idx, 'commission', Number(e.target.value))} className="w-full bg-transparent text-[10px] text-slate-500 dark:text-slate-400 outline-none border-b border-transparent focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 placeholder-slate-300" placeholder="0" /></td> <td className="px-2 py-2"><input type="number" step="any" value={t.tax || ''} onChange={(e) => updateSingleScannedTrade(idx, 'tax', Number(e.target.value))} className="w-full bg-transparent text-[10px] text-slate-500 dark:text-slate-400 outline-none border-b border-transparent focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 placeholder-slate-300" placeholder="0" /></td> <td className="px-2 py-2"><input type="number" step="any" value={t.cdcCharges || ''} onChange={(e) => updateSingleScannedTrade(idx, 'cdcCharges', Number(e.target.value))} className="w-full bg-transparent text-[10px] text-slate-500 dark:text-slate-400 outline-none border-b border-transparent focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 placeholder-slate-300" placeholder="0" /></td> <td className="px-2 py-2"><input type="number" step="any" value={t.otherFees || ''} onChange={(e) => updateSingleScannedTrade(idx, 'otherFees', Number(e.target.value))} className="w-full bg-transparent text-[10px] text-slate-500 dark:text-slate-400 outline-none border-b border-transparent focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 placeholder-slate-300" placeholder="0" /></td> <td className="px-3 py-2 text-center"><button onClick={() => handleAcceptTrade(t)} className="p-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-600 hover:text-white rounded-lg transition-all shadow-sm" title="Add Transaction"> <Plus size={14} strokeWidth={3} /> </button></td> </tr> ))} </tbody>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700"> {savedScannedTrades.map((t, idx) => ( <tr key={idx} className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors group ${selectedScanIndices.has(idx) ? 'bg-indigo-50/40 dark:bg-indigo-900/20' : ''}`}> <td className="px-3 py-2 text-center"> <input type="checkbox" checked={selectedScanIndices.has(idx)} onChange={() => toggleScanSelection(idx)} className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500 cursor-pointer"/> </td> <td className="px-3 py-2"><span className={`text-[10px] font-bold px-2 py-1 rounded border ${t.type === 'BUY' ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-800' : 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-800'}`}>{t.type}</span></td> <td className="px-3 py-2"><input type="date" value={t.date || ''} onChange={(e) => updateSingleScannedTrade(idx, 'date', e.target.value)} className="w-24 bg-transparent text-xs font-medium text-slate-700 dark:text-slate-300 outline-none border-b border-transparent focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 transition-all" /></td> <td className="px-3 py-2"><input type="text" value={t.ticker} onChange={(e) => updateSingleScannedTrade(idx, 'ticker', e.target.value.toUpperCase())} className="w-16 bg-transparent text-xs font-bold text-slate-800 dark:text-slate-200 outline-none border-b border-transparent focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 uppercase transition-all" /></td> <td className="px-3 py-2"><select disabled value={t.brokerId || ''} onChange={(e) => updateSingleScannedTrade(idx, 'brokerId', e.target.value)} className="w-24 bg-transparent text-xs text-slate-500 dark:text-slate-400 outline-none border-b border-transparent appearance-none truncate cursor-not-allowed bg-slate-100 dark:bg-slate-800"><option value="">{t.broker || 'Select'}</option>{brokers.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></td> <td className="px-3 py-2"><input type="number" value={t.quantity} onChange={(e) => updateSingleScannedTrade(idx, 'quantity', Number(e.target.value))} className="w-full bg-transparent text-xs font-medium text-slate-700 dark:text-slate-300 outline-none border-b border-transparent focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 transition-all" placeholder="0" /></td> <td className="px-3 py-2"><input type="number" step="0.01" value={t.price} onChange={(e) => updateSingleScannedTrade(idx, 'price', Number(e.target.value))} className="w-full bg-transparent text-xs font-medium text-slate-700 dark:text-slate-300 outline-none border-b border-transparent focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 transition-all" placeholder="0.00" /></td> <td className="px-2 py-2"><input type="number" step="any" value={t.commission || ''} onChange={(e) => updateSingleScannedTrade(idx, 'commission', Number(e.target.value))} className="w-full bg-transparent text-[10px] text-slate-500 dark:text-slate-400 outline-none border-b border-transparent focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 placeholder-slate-300" placeholder="0" /></td> <td className="px-2 py-2"><input type="number" step="any" value={t.tax || ''} onChange={(e) => updateSingleScannedTrade(idx, 'tax', Number(e.target.value))} className="w-full bg-transparent text-[10px] text-slate-500 dark:text-slate-400 outline-none border-b border-transparent focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 placeholder-slate-300" placeholder="0" /></td> <td className="px-2 py-2"><input type="number" step="any" value={t.cdcCharges || ''} onChange={(e) => updateSingleScannedTrade(idx, 'cdcCharges', Number(e.target.value))} className="w-full bg-transparent text-[10px] text-slate-500 dark:text-slate-400 outline-none border-b border-transparent focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 placeholder-slate-300" placeholder="0" /></td> <td className="px-2 py-2"><input type="number" step="any" value={t.otherFees || ''} onChange={(e) => updateSingleScannedTrade(idx, 'otherFees', Number(e.target.value))} className="w-full bg-transparent text-[10px] text-slate-500 dark:text-slate-400 outline-none border-b border-transparent focus:border-indigo-400 focus:bg-white dark:focus:bg-slate-800 placeholder-slate-300" placeholder="0" /></td> <td className="px-3 py-2 text-center"><button type="button" onClick={() => handleAcceptTrade(t)} className="p-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-600 hover:text-white rounded-lg transition-all shadow-sm" title="Add Transaction"> <Plus size={14} strokeWidth={3} /> </button></td> </tr> ))} </tbody>
                                 </table>
                             </div>
                         </div>
