@@ -183,7 +183,7 @@ const App: React.FC = () => {
               const data = newResults[ticker]; 
               if (data && data.price > 0) { 
                   validUpdates[ticker] = data.price; 
-                  timestampUpdates[ticker] = now; 
+                  timestampUpdates[ticker] = data.updated_at || now; 
                   if (data.ldcp > 0) ldcpUpdates[ticker] = data.ldcp; 
                   if (data.sector && data.sector !== 'Unknown Sector') { newSectors[ticker] = data.sector; } 
               } else { 
