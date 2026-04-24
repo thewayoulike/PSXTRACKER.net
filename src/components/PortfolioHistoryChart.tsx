@@ -8,37 +8,60 @@ interface Props {
 }
 
 export const PortfolioHistoryChart: React.FC<Props> = ({ transactions }) => {
-  const [kseData, setKseData] = useState<Record<string, number>>({});
+  const [marketData, setMarketData] = useState<Record<string, Record<string, number>>>({});
   const [isLoading, setIsLoading] = useState(true);
 
-  // Fetch KSE100 Data for the last 30 days
+  // Get a unique list of all the stocks you have traded
+  const uniqueTickers = useMemo(() => {
+    const tickers = new Set(transactions.map(t => t.ticker).filter(t => t && t !== 'ANNUAL FEE' && t !== 'PREV-PNL' && t !== 'KSE100'));
+    return Array.from(tickers);
+  }, [transactions]);
+
+  // Fetch 30-day history for KSE100 AND all your individual stocks
   useEffect(() => {
-    const fetchKse = async () => {
+    const fetchAllData = async () => {
+      setIsLoading(true);
       try {
-        // Uses the fixed Nginx proxy route
-        const res = await fetch('/api/quotes/KSE100/30d');
-        if (!res.ok) throw new Error('Failed to fetch KSE100');
-        const data = await res.json();
-        
-        const map: Record<string, number> = {};
-        data.forEach((d: { time: number, price: number }) => {
-          const dateStr = new Date(d.time).toISOString().split('T')[0];
-          map[dateStr] = d.price;
-        });
-        setKseData(map);
+        const dataMap: Record<string, Record<string, number>> = {};
+
+        // 1. Fetch KSE100
+        const kseRes = await fetch('/api/quotes/KSE100/30d');
+        if (kseRes.ok) {
+          const kseJson = await kseRes.json();
+          kseJson.forEach((d: any) => {
+            const dateStr = new Date(d.time).toISOString().split('T')[0];
+            if (!dataMap[dateStr]) dataMap[dateStr] = {};
+            dataMap[dateStr]['KSE100'] = d.price;
+          });
+        }
+
+        // 2. Fetch all individual stocks
+        await Promise.all(uniqueTickers.map(async (ticker) => {
+          const res = await fetch(`/api/quotes/${ticker}/30d`);
+          if (res.ok) {
+            const json = await res.json();
+            json.forEach((d: any) => {
+              const dateStr = new Date(d.time).toISOString().split('T')[0];
+              if (!dataMap[dateStr]) dataMap[dateStr] = {};
+              dataMap[dateStr][ticker] = d.price;
+            });
+          }
+        }));
+
+        setMarketData(dataMap);
       } catch (error) {
-        console.error("Error fetching KSE100 history:", error);
+        console.error("Error fetching chart data:", error);
       } finally {
         setIsLoading(false);
       }
     };
-    fetchKse();
-  }, []);
+
+    fetchAllData();
+  }, [uniqueTickers.join(',')]);
 
   const chartData = useMemo(() => {
-    if (transactions.length === 0 && Object.keys(kseData).length === 0) return [];
+    if (Object.keys(marketData).length === 0) return [];
 
-    // 1. Generate the last 30 days
     const days: string[] = [];
     const today = new Date();
     for (let i = 30; i >= 0; i--) {
@@ -47,70 +70,66 @@ export const PortfolioHistoryChart: React.FC<Props> = ({ transactions }) => {
       days.push(d.toISOString().split('T')[0]);
     }
 
-    // 2. Calculate raw portfolio value per day
-    // (Simplified historical calculation based on deposits/withdrawals/profits)
-    let runningValue = 0;
-    const rawData = days.map(date => {
-      const dayTxs = transactions.filter(t => t.date === date);
-      dayTxs.forEach(t => {
-        if (t.type === 'DEPOSIT') runningValue += t.price;
-        if (t.type === 'WITHDRAWAL') runningValue -= Math.abs(t.price);
-        if (t.type === 'HISTORY') runningValue += t.price; // PnL changes
+    const result = [];
+    let prevKse = 0;
+    let prevStockPrices: Record<string, number> = {};
+
+    for (let i = 0; i < days.length; i++) {
+      const date = days[i];
+      const dayData = marketData[date] || {};
+
+      // Calculate KSE Daily % Change
+      const currentKse = dayData['KSE100'] || prevKse;
+      let kseDailyPct = 0;
+      if (prevKse > 0 && currentKse > 0) {
+        kseDailyPct = ((currentKse - prevKse) / prevKse) * 100;
+      }
+      if (currentKse > 0) prevKse = currentKse;
+
+      // Calculate Portfolio Average Daily % Change
+      let stockPctSum = 0;
+      let stockCount = 0;
+
+      uniqueTickers.forEach(ticker => {
+        const currentPrice = dayData[ticker] || prevStockPrices[ticker];
+        const prevPrice = prevStockPrices[ticker];
+
+        if (prevPrice > 0 && currentPrice > 0) {
+          const dailyPct = ((currentPrice - prevPrice) / prevPrice) * 100;
+          stockPctSum += dailyPct;
+          stockCount++;
+        }
+        if (currentPrice > 0) {
+           prevStockPrices[ticker] = currentPrice;
+        }
       });
-      
-      // If we don't have KSE100 for a weekend, carry over the previous day
-      const ksePrice = kseData[date] || 0; 
-      
-      return {
+
+      const portfolioDailyPct = stockCount > 0 ? (stockPctSum / stockCount) : 0;
+
+      result.push({
         fullDate: date,
-        displayDate: date.substring(5).replace('-', '/'), // MM/DD
-        rawPortfolio: runningValue > 0 ? runningValue : 0,
-        rawKse: ksePrice
-      };
-    });
+        displayDate: date.substring(5).replace('-', '/'),
+        ksePct: Number(kseDailyPct.toFixed(2)),
+        portfolioPct: Number(portfolioDailyPct.toFixed(2))
+      });
+    }
 
-    // 3. PERCENTAGE NORMALIZATION LOGIC
-    // Find the first valid value to anchor as 0%
-    let firstValidPortfolio = rawData.find(d => d.rawPortfolio > 0)?.rawPortfolio || 1;
-    let firstValidKse = rawData.find(d => d.rawKse > 0)?.rawKse || 1;
+    // Remove the first day since it has no "yesterday" to compare to
+    return result.slice(1);
+  }, [marketData, uniqueTickers]);
 
-    // Fill in trailing zeros for KSE100 (weekends) with last known value
-    let lastKnownKse = firstValidKse;
-
-    return rawData.map(d => {
-      const currentKse = d.rawKse > 0 ? d.rawKse : lastKnownKse;
-      if (d.rawKse > 0) lastKnownKse = d.rawKse;
-
-      // Calculate % change: ((Current - First) / First) * 100
-      const portfolioPct = d.rawPortfolio > 0 ? ((d.rawPortfolio - firstValidPortfolio) / firstValidPortfolio) * 100 : 0;
-      const ksePct = currentKse > 0 ? ((currentKse - firstValidKse) / firstValidKse) * 100 : 0;
-
-      return {
-        ...d,
-        currentKse,
-        portfolioPct: Number(portfolioPct.toFixed(2)),
-        ksePct: Number(ksePct.toFixed(2))
-      };
-    });
-
-  }, [transactions, kseData]);
-
-  // Custom Tooltip to show % and raw values
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const pData = payload[0].payload;
       return (
         <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700">
           <p className="text-slate-500 dark:text-slate-400 font-bold mb-2 text-sm">{pData.fullDate}</p>
-          
           <div className="flex flex-col gap-1">
             <p className="text-emerald-500 font-bold text-sm">
-              Portfolio: {pData.portfolioPct > 0 ? '+' : ''}{pData.portfolioPct}% 
-              <span className="text-slate-400 font-normal text-xs ml-1">(Rs. {pData.rawPortfolio.toLocaleString(undefined, {maximumFractionDigits: 0})})</span>
+              Portfolio Avg: {pData.portfolioPct > 0 ? '+' : ''}{pData.portfolioPct}% 
             </p>
             <p className="text-indigo-500 font-bold text-sm">
               KSE-100: {pData.ksePct > 0 ? '+' : ''}{pData.ksePct}%
-              <span className="text-slate-400 font-normal text-xs ml-1">({pData.currentKse.toLocaleString(undefined, {maximumFractionDigits: 0})})</span>
             </p>
           </div>
         </div>
@@ -131,7 +150,7 @@ export const PortfolioHistoryChart: React.FC<Props> = ({ transactions }) => {
     <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 dark:border-slate-800 w-full overflow-hidden">
       <div className="flex items-center gap-2 mb-6">
         <TrendingUp className="text-emerald-500" size={20} />
-        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Relative Performance (30 Days)</h3>
+        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Daily Return % (30 Days)</h3>
       </div>
       
       <div className="h-64 sm:h-80 w-full relative">
@@ -139,30 +158,13 @@ export const PortfolioHistoryChart: React.FC<Props> = ({ transactions }) => {
           <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
             <XAxis dataKey="displayDate" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} dy={10} minTickGap={20} />
-            
-            {/* Formats the Y-Axis as a Percentage */}
             <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} tickFormatter={(tick) => `${tick}%`} />
-            
             <Tooltip content={<CustomTooltip />} />
-            
-            {/* Zero Line to clearly show Positive vs Negative */}
             <ReferenceLine y={0} stroke="#cbd5e1" strokeDasharray="3 3" />
-            
             <Line type="monotone" dataKey="portfolioPct" stroke="#10b981" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#10b981', stroke: '#fff', strokeWidth: 2 }} name="Portfolio" />
             <Line type="monotone" dataKey="ksePct" stroke="#6366f1" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#6366f1', stroke: '#fff', strokeWidth: 2 }} name="KSE-100" />
           </LineChart>
         </ResponsiveContainer>
-      </div>
-      
-      <div className="flex justify-center items-center gap-6 mt-4">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-          <span className="text-xs font-bold text-slate-600 dark:text-slate-400">Portfolio</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-indigo-500"></div>
-          <span className="text-xs font-bold text-slate-600 dark:text-slate-400">KSE-100</span>
-        </div>
       </div>
     </div>
   );
