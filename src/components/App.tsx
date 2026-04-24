@@ -19,7 +19,7 @@ import { MarketTicker } from './MarketTicker';
 import { TransferModal } from './TransferModal';
 import { TradingSimulator } from './TradingSimulator';
 import { FairValueCalculator } from './FairValueCalculator';
-import { PortfolioHistoryChart } from './PortfolioHistoryChart'; // <-- NEW CHART ADDED HERE
+import { PortfolioHistoryChart } from './PortfolioHistoryChart';
 import { getSector } from '../services/sectors';
 import { fetchBatchPSXPrices, setScrapingApiKey, setWebScrapingAIKey, fetchAllPSXSymbols } from '../services/psxData';
 import { setGeminiApiKey } from '../services/gemini';
@@ -49,7 +49,6 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>('DASHBOARD');
   const [viewTicker, setViewTicker] = useState<string | null>(null);
   
-  // --- STATE FOR SCRAPED DATA ---
   const [allSymbols, setAllSymbols] = useState<string[]>([]);
   const [marketSectors, setMarketSectors] = useState<Record<string, string>>({});
 
@@ -97,7 +96,6 @@ const App: React.FC = () => {
 
   const lastPriceUpdate = useMemo(() => { const times = Object.values(priceTimestamps); if (times.length === 0) return null; return times.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]; }, [priceTimestamps]);
   
-  // --- UPDATED SECTOR MAP TO USE SCRAPED DATA ---
   const sectorMap = useMemo(() => { 
       const map: Record<string, string> = { ...marketSectors }; 
       const uTickers = new Set(transactions.map(t => t.ticker)); 
@@ -114,7 +112,6 @@ const App: React.FC = () => {
   useEffect(() => { if (userApiKey) setGeminiApiKey(userApiKey); if (userScraperKey) setScrapingApiKey(userScraperKey); if (userWebScrapingAIKey) setWebScrapingAIKey(userWebScrapingAIKey); }, [userApiKey, userScraperKey, userWebScrapingAIKey]);
   useEffect(() => { if (isCombinedView && combinedPortfolioIds.size === 0 && portfolios.length > 0) { setCombinedPortfolioIds(new Set(portfolios.map(p => p.id))); } }, [isCombinedView, portfolios, combinedPortfolioIds.size]);
 
-  // --- FETCH SCRAPED DATA ON LOAD ---
   useEffect(() => { 
       fetchAllPSXSymbols().then(data => { 
           if (data && data.symbols.length > 0) { 
@@ -213,18 +210,31 @@ const App: React.FC = () => {
       } 
   };
 
-  // --- NEW: AUTO-UPDATER FOR LIVE PRICES (Every 3 Minutes) ---
+  // --- NEW: AUTO-UPDATER FOR LIVE PRICES (Strict PKT Schedule) ---
   useEffect(() => {
       const intervalId = setInterval(() => {
-          const now = new Date();
-          const hours = now.getHours(); // Assumes user's local time matches PSX (PKT)
+          // 1. Get current time strictly in PKT
+          const pktTimeString = new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" });
+          const pktDate = new Date(pktTimeString);
           
-          // Only auto-update between roughly 9 AM and 4 PM
-          if (hours >= 9 && hours <= 16 && holdings.length > 0) {
-              console.log("Auto-updating live market prices...");
-              handleSyncPrices(true); // Silent sync (no loading spinners)
+          const day = pktDate.getDay();
+          const hours = pktDate.getHours();
+          const minutes = pktDate.getMinutes();
+          
+          // 2. Monday to Friday only
+          const isWeekday = day >= 1 && day <= 5;
+          
+          // 3. Between 9:15 AM and 4:30 PM (16:30)
+          const isAfterOpen = hours > 9 || (hours === 9 && minutes >= 15);
+          const isBeforeClose = hours < 16 || (hours === 16 && minutes <= 30);
+          const isMarketOpen = isAfterOpen && isBeforeClose;
+
+          // 4. Trigger sync
+          if (isWeekday && isMarketOpen && holdings.length > 0) {
+              console.log("Auto-updating live market prices (Market Open PKT)...");
+              handleSyncPrices(true);
           }
-      }, 180000); // 3 minutes = 180,000 ms
+      }, 180000); // Runs every 3 minutes (180,000 ms)
 
       return () => clearInterval(intervalId);
   }, [holdings]); // Depend on holdings so it knows which tickers to fetch
@@ -548,7 +558,6 @@ const App: React.FC = () => {
             {currentView === 'DASHBOARD' && (
                 <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
                     <Dashboard stats={stats} lastUpdated={lastPriceUpdate} />
-                    {/* NEW 30-DAY CHART INJECTED HERE */}
                     <PortfolioHistoryChart transactions={portfolioTransactions} />
                     <div className="flex flex-col gap-6 mt-6">
                         <AllocationChart holdings={holdings} />
