@@ -5,25 +5,26 @@ import webpush from 'web-push';
 
 const { Database } = sqlite3pkg;
 chromium.use(stealth());
+
+// 1. Setup Database
 const db = new Database('/var/www/psxtracker/psx_data.db');
 
-// --- 🔴 PASTE YOUR KEYS HERE ---
+// 2. Setup Push Notifications
 const publicVapidKey = 'BOQirLyVkFOMp0DGyxgzq8oraIRq5FVopRlewMjLCn3VuIih8rak8BM_iiLCxIkMvDAoFlj8XulePa3RsByI6sQ';
 const privateVapidKey = 'THsU_Jjbg6a1fv0Z3sNo4eRRIW5DQ3tAZnJdIw9_Wgo';
-// --------------------------------
-
 webpush.setVapidDetails('mailto:support@psxtracker.com', publicVapidKey, privateVapidKey);
 
-const CHECK_INTERVAL = 120000; // 2 minutes
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const CHECK_INTERVAL = 300000; // 5 MINUTES (300,000ms)
 
 async function sendMobilePush(title, body) {
     db.all("SELECT subscription FROM push_subscriptions", [], (err, rows) => {
         if (err || !rows) return;
         rows.forEach(row => {
-            const sub = JSON.parse(row.subscription);
-            webpush.sendNotification(sub, JSON.stringify({ title, body }))
-                .catch(err => console.error("Push delivery failed:", err.message));
+            try {
+                const sub = JSON.parse(row.subscription);
+                webpush.sendNotification(sub, JSON.stringify({ title, body }))
+                    .catch(() => {}); // Quietly handle expired tokens
+            } catch (e) {}
         });
     });
 }
@@ -31,86 +32,84 @@ async function sendMobilePush(title, body) {
 async function checkAlerts(currentPrices) {
     db.all("SELECT * FROM price_alerts WHERE is_active = 1", [], async (err, alerts) => {
         if (err || !alerts) return;
-
         for (const alert of alerts) {
             const livePrice = currentPrices[alert.ticker];
             if (!livePrice) continue;
-
-            let triggered = false;
-            if (alert.condition === 'ABOVE' && livePrice >= alert.target_price) triggered = true;
-            if (alert.condition === 'BELOW' && livePrice <= alert.target_price) triggered = true;
-
+            let triggered = (alert.condition === 'ABOVE' && livePrice >= alert.target_price) || 
+                            (alert.condition === 'BELOW' && livePrice <= alert.target_price);
             if (triggered) {
-                const title = `🚀 Price Alert: ${alert.ticker}`;
-                const body = `${alert.ticker} hit ${livePrice}! Target was ${alert.target_price} (${alert.condition})`;
-                await sendMobilePush(title, body);
-                
+                await sendMobilePush(`🚀 Alert: ${alert.ticker}`, `${alert.ticker} hit ${livePrice}!`);
                 db.run("UPDATE price_alerts SET is_active = 0 WHERE id = ?", [alert.id]);
             }
         }
     });
 }
 
-async function scrapeLoop() {
-    while (true) {
-        console.log(`[${new Date().toLocaleString()}] 🔄 Scraping for prices and alerts...`);
-        const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
-        
+// --- MAIN SCRAPER ENGINE ---
+
+async function runScraper() {
+    console.log(`[${new Date().toLocaleString()}] 🚀 INITIALIZING STEALTH BROWSER (One-time launch)...`);
+    
+    const browser = await chromium.launch({ 
+        headless: true, 
+        args: ['--no-sandbox', '--disable-dev-shm-usage'] 
+    });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    // The repeated task
+    const performScrape = async () => {
         try {
-            const context = await browser.newContext();
-            const page = await context.newPage();
+            console.log(`[${new Date().toLocaleString()}] 🔄 Scraping PSX Market...`);
             await page.goto('https://dps.psx.com.pk/market-watch', { waitUntil: 'networkidle', timeout: 60000 });
-            await page.waitForSelector('table', { timeout: 30000 });
+            await page.waitForSelector('table', { timeout: 20000 });
 
             const stocks = await page.evaluate(() => {
                 const data = {};
-                const table = document.querySelector('table');
-                if (!table) return {};
-
-                const rows = Array.from(table.querySelectorAll('tr'));
+                const rows = Array.from(document.querySelectorAll('table tr'));
                 rows.forEach(row => {
                     const cells = row.querySelectorAll('td');
                     if (cells.length >= 8) {
-                        const rawTicker = cells[0].innerText.trim();
-                        const ticker = rawTicker.split(/[\s-]/)[0].toUpperCase();
-                        
+                        const ticker = cells[0].innerText.trim().split(/[\s-]/)[0].toUpperCase();
                         const price = parseFloat(cells[7].innerText.replace(/,/g, ''));
                         const ldcp = parseFloat(cells[3].innerText.replace(/,/g, ''));
-                        
-                        if (ticker && ticker.length <= 10 && !isNaN(price)) {
-                            data[ticker] = { price, ldcp };
-                        }
+                        if (ticker && !isNaN(price)) data[ticker] = { price, ldcp };
                     }
                 });
                 return data;
             });
 
-            const tickerKeys = Object.keys(stocks);
-            if (tickerKeys.length > 0) {
-                console.log(`✅ Success! Updated ${tickerKeys.length} stocks in database.`);
+            const tickers = Object.keys(stocks);
+            if (tickers.length > 0) {
                 const now = new Date().toISOString();
-                
                 db.serialize(() => {
                     db.run("BEGIN TRANSACTION");
                     const stmt = db.prepare("INSERT OR REPLACE INTO live_prices (ticker, price, ldcp, updated_at) VALUES (?, ?, ?, ?)");
-                    tickerKeys.forEach(t => stmt.run(t, stocks[t].price, stocks[t].ldcp, now));
+                    tickers.forEach(t => stmt.run(t, stocks[t].price, stocks[t].ldcp, now));
                     stmt.finalize();
                     db.run("COMMIT");
                 });
-
-                // Check active alerts against new prices
-                const priceMap = {};
-                tickerKeys.forEach(t => priceMap[t] = stocks[t].price);
-                await checkAlerts(priceMap);
+                console.log(`✅ Success! Updated ${tickers.length} stocks in database.`);
+                
+                const simplePriceMap = {};
+                tickers.forEach(t => simplePriceMap[t] = stocks[t].price);
+                await checkAlerts(simplePriceMap);
             }
         } catch (error) {
-            console.error("❌ Scrape Error:", error.message);
-        } finally {
-            await browser.close();
-            console.log(`[${new Date().toLocaleString()}] 😴 Sleeping for 2 minutes...`);
-            await sleep(CHECK_INTERVAL);
+            console.error(`❌ Scrape Attempt Failed: ${error.message}`);
         }
-    }
+        console.log(`😴 Waiting 5 minutes for next update...`);
+    };
+
+    // Run immediately on start
+    await performScrape();
+
+    // Then run every 5 minutes
+    setInterval(performScrape, CHECK_INTERVAL);
 }
 
-scrapeLoop();
+// Catch top-level errors
+runScraper().catch(err => {
+    console.error("💥 FATAL SCRAPER ERROR:", err);
+    process.exit(1);
+});
