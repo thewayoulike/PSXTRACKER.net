@@ -1,5 +1,4 @@
 // src/services/driveStorage.ts
-
 const CLIENT_ID = '738261170592-ohspqfpa3bd4ieefqffe4aj7p2p8qetd.apps.googleusercontent.com';
 const STORAGE_TOKEN_KEY = 'psx_drive_access_token';
 const STORAGE_USER_KEY = 'psx_drive_user_profile';
@@ -9,16 +8,25 @@ const SCOPES = 'https://www.googleapis.com/auth/userinfo.email https://www.googl
 let tokenClient: any = null;
 let accessToken: string | null = null;
 let tokenExpiryTime: number = 0;
-let refreshTokenResolver: ((token: string) => void) | null = null;
 
 export interface DriveUser { name: string; email: string; picture: string; }
 
+// --- AUTH LOGIC ---
+
 export const initDriveAuth = (onUserLoggedIn: (user: DriveUser) => void) => {
-    if (document.getElementById('google-gsi-script')) return;
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true; script.defer = true; script.id = 'google-gsi-script';
-    document.body.appendChild(script);
+    // Immediate check for existing session
+    const savedUser = localStorage.getItem(STORAGE_USER_KEY);
+    const expiry = localStorage.getItem(STORAGE_EXPIRY_KEY);
+    if (savedUser && expiry && Date.now() < parseInt(expiry)) {
+        onUserLoggedIn(JSON.parse(savedUser));
+    }
+
+    if (!document.getElementById('google-gsi-script')) {
+        const script = document.createElement('script');
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.async = true; script.id = 'google-gsi-script';
+        document.body.appendChild(script);
+    }
 
     const checkInterval = setInterval(() => {
         if (window.google?.accounts?.oauth2) {
@@ -31,7 +39,9 @@ export const initDriveAuth = (onUserLoggedIn: (user: DriveUser) => void) => {
                         tokenExpiryTime = Date.now() + (resp.expires_in || 3599) * 1000;
                         localStorage.setItem(STORAGE_TOKEN_KEY, accessToken!);
                         localStorage.setItem(STORAGE_EXPIRY_KEY, tokenExpiryTime.toString());
-                        const userResp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: `Bearer ${accessToken}` } });
+                        const userResp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { 
+                            headers: { Authorization: `Bearer ${accessToken}` } 
+                        });
                         if (userResp.ok) {
                             const user = await userResp.json();
                             const userData = { name: user.name, email: user.email, picture: user.picture };
@@ -45,8 +55,21 @@ export const initDriveAuth = (onUserLoggedIn: (user: DriveUser) => void) => {
     }, 500);
 };
 
-export const signInWithDrive = () => tokenClient?.requestAccessToken({ prompt: '' });
-export const signOutDrive = () => { localStorage.clear(); window.location.reload(); };
+// FIXED: Explicitly exporting this now so the build passes
+export const signInWithDrive = () => {
+    if (tokenClient) {
+        tokenClient.requestAccessToken({ prompt: '' });
+    } else {
+        console.error("Google Auth not initialized yet.");
+    }
+};
+
+export const signOutDrive = () => {
+    localStorage.clear();
+    window.location.reload();
+};
+
+// --- VPS DATA STORAGE ---
 
 export const loadFromDrive = async () => {
     const userStr = localStorage.getItem(STORAGE_USER_KEY);
@@ -56,13 +79,12 @@ export const loadFromDrive = async () => {
         const resp = await fetch(`/api/load/${encodeURIComponent(user.email)}`);
         if (resp.ok) {
             const data = await resp.json();
-            // Force return of objects so forEach doesn't fail
             return {
-                transactions: Array.isArray(data.transactions) ? data.transactions : [],
-                portfolios: Array.isArray(data.portfolios) ? data.portfolios : []
+                transactions: Array.isArray(data?.transactions) ? data.transactions : [],
+                portfolios: Array.isArray(data?.portfolios) ? data.portfolios : []
             };
         }
-    } catch (e) { console.error("Load failed", e); }
+    } catch (e) { console.error("VPS Load Error", e); }
     return { transactions: [], portfolios: [] };
 };
 
@@ -76,18 +98,23 @@ export const saveToDrive = async (data: any) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
-    } catch (e) { console.error("Save failed", e); }
+    } catch (e) { console.error("VPS Save Error", e); }
 };
 
-// --- GMAIL Integration (Fixes Build) ---
-export const getValidToken = async (): Promise<string | null> => {
-    if (accessToken && tokenExpiryTime > Date.now() + 60000) return accessToken;
-    return null;
-};
+// --- COMPATIBILITY EXPORTS (Required for App.tsx and TransactionForm.tsx) ---
 
+export const getValidToken = async () => localStorage.getItem(STORAGE_TOKEN_KEY);
 export const searchGmailMessages = async () => [];
 export const downloadGmailAttachment = async () => null;
-export const hasValidSession = () => !!localStorage.getItem(STORAGE_EXPIRY_KEY);
+export const hasValidSession = () => {
+    const expiry = localStorage.getItem(STORAGE_EXPIRY_KEY);
+    return expiry ? Date.now() < parseInt(expiry) : false;
+};
 export const syncTransactionsToSheet = async () => {};
 export const getGoogleSheetId = async () => null;
-export const deleteUserData = async () => true;
+export const deleteUserData = async (email: string) => {
+    try {
+        const resp = await fetch(`/api/delete/${encodeURIComponent(email)}`, { method: 'DELETE' });
+        return resp.ok;
+    } catch (e) { return false; }
+};
