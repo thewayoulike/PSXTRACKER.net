@@ -8,8 +8,8 @@ chromium.use(stealth());
 const db = new Database('/var/www/psxtracker/psx_data.db');
 
 // --- 🔴 PASTE YOUR KEYS HERE ---
-const publicVapidKey = 'YOUR_PUBLIC_VAPID_KEY_HERE';
-const privateVapidKey = 'YOUR_PRIVATE_VAPID_KEY_HERE';
+const publicVapidKey = 'BOQirLyVkFOMp0DGyxgzq8oraIRq5FVopRlewMjLCn3VuIih8rak8BM_iiLCxIkMvDAoFlj8XulePa3RsByI6sQ';
+const privateVapidKey = 'THsU_Jjbg6a1fv0Z3sNo4eRRIW5DQ3tAZnJdIw9_Wgo';
 // --------------------------------
 
 webpush.setVapidDetails('mailto:support@psxtracker.com', publicVapidKey, privateVapidKey);

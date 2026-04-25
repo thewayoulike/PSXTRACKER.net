@@ -102,7 +102,7 @@ const App: React.FC = () => {
             const registration = await navigator.serviceWorker.ready;
             
             // --- 🔴 PASTE YOUR PUBLIC KEY HERE ---
-            const publicKey = 'YOUR_PUBLIC_VAPID_KEY_HERE';
+            const publicKey = 'BOQirLyVkFOMp0DGyxgzq8oraIRq5FVopRlewMjLCn3VuIih8rak8BM_iiLCxIkMvDAoFlj8XulePa3RsByI6sQ';
             
             const subscription = await registration.pushManager.subscribe({
                 userVisibleOnly: true,
