@@ -30,7 +30,7 @@ const db = new Database('/var/www/psxtracker/psx_data.db', (err) => {
 });
 
 // Existing route: Fetch live prices
-app.get('/api/live-prices', (req, res) => {
+app.get(['/api/live-prices', '/live-prices'], (req, res) => {
     db.all("SELECT * FROM live_prices", [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         const prices = {};
@@ -40,7 +40,7 @@ app.get('/api/live-prices', (req, res) => {
 });
 
 // NEW Route: Save mobile notification subscriptions
-app.post('/api/save-subscription', (req, res) => {
+app.post(['/api/save-subscription', '/save-subscription'], (req, res) => {
     const subscription = JSON.stringify(req.body);
     db.run("INSERT INTO push_subscriptions (subscription) VALUES (?)", [subscription], function(err) {
         if (err) return res.status(500).json({ error: err.message });

@@ -100,8 +100,6 @@ const App: React.FC = () => {
         const permission = await Notification.requestPermission();
         if (permission === 'granted') {
             const registration = await navigator.serviceWorker.ready;
-            
-            // --- 🔴 PASTE YOUR PUBLIC KEY HERE ---
             const publicKey = 'BOQirLyVkFOMp0DGyxgzq8oraIRq5FVopRlewMjLCn3VuIih8rak8BM_iiLCxIkMvDAoFlj8XulePa3RsByI6sQ';
             
             const subscription = await registration.pushManager.subscribe({
@@ -134,9 +132,14 @@ const App: React.FC = () => {
   }, [transactions, sectorOverrides, marketSectors]);
 
   const performLogout = useCallback(() => { setTransactions([]); setPortfolios([DEFAULT_PORTFOLIO]); setHoldings([]); setRealizedTrades([]); setManualPrices({}); setLdcpMap({}); setPriceTimestamps({}); setSectorOverrides({}); setBrokers([DEFAULT_BROKER]); setScannerState({}); setTradeScanResults([]); setUserApiKey(''); setUserScraperKey(''); setUserWebScrapingAIKey(''); setGeminiApiKey(null); setScrapingApiKey(null); setWebScrapingAIKey(null); setDriveUser(null); setGoogleSheetId(null); localStorage.clear(); signOutDrive(); isReadyToSave.current = false; }, []);
+  
   useIdleTimer(1800000, () => { if (transactions.length > 0 || driveUser) { performLogout(); alert("Session timed out due to inactivity. Data cleared for security."); } });
+  
   const handleManualLogout = () => { if (window.confirm("Logout and clear local data?")) { performLogout(); } };
-  const handleWipeData = async () => { if (!driveUser) return; const confirmed = window.confirm("⚠️ DANGER: This will permanently delete ALL your portfolio data and history from our servers. This cannot be undone. Proceed?"); if (confirmed) { const success = await deleteUserData(driveUser.email); if (success) { alert("Your account data has been completely wiped."); performLogout(); } else { alert("Failed to wipe data. Please try again later."); } } };
+  
+  // FIX: Accurate messaging on what Wipe Data actually does
+  const handleWipeData = async () => { if (!driveUser) return; const confirmed = window.confirm("⚠️ DANGER: This will permanently delete ALL your portfolio data and history from your Google Drive. This cannot be undone. Proceed?"); if (confirmed) { const success = await deleteUserData(driveUser.email); if (success) { alert("Your account data has been completely wiped."); performLogout(); } else { alert("Failed to wipe data. Please try again later."); } } };
+  
   const handleLogin = () => signInWithDrive();
 
   useEffect(() => { if (userApiKey) setGeminiApiKey(userApiKey); if (userScraperKey) setScrapingApiKey(userScraperKey); if (userWebScrapingAIKey) setWebScrapingAIKey(userWebScrapingAIKey); }, [userApiKey, userScraperKey, userWebScrapingAIKey]);
@@ -151,23 +154,46 @@ const App: React.FC = () => {
       }); 
   }, []);
 
+  // --- BULLETPROOF GOOGLE DRIVE LOAD LOGIC ---
   useEffect(() => {
       initDriveAuth(async (user) => {
-          setDriveUser(user); setIsAuthChecking(false); setShowLogin(false); getGoogleSheetId().then(id => setGoogleSheetId(id)); setIsCloudSyncing(true);
+          setDriveUser(user); 
+          setIsAuthChecking(false); 
+          setShowLogin(false); 
+          setIsCloudSyncing(true);
+          getGoogleSheetId().then(id => setGoogleSheetId(id)); 
+          
           try {
               const cloudData = await loadFromDrive();
-              if (cloudData) {
+              if (cloudData && Object.keys(cloudData).length > 0) {
                   if (cloudData.portfolios) setPortfolios(cloudData.portfolios);
                   if (cloudData.transactions) { const cleanTx = (cloudData.transactions as Transaction[]).filter(t => !t.id.startsWith('auto-cgt-')); setTransactions(cleanTx); }
-                  if (cloudData.manualPrices) setManualPrices(cloudData.manualPrices); if (cloudData.ldcpMap) setLdcpMap(cloudData.ldcpMap); if (cloudData.priceTimestamps) setPriceTimestamps(cloudData.priceTimestamps);
-                  if (cloudData.currentPortfolioId) setCurrentPortfolioId(cloudData.currentPortfolioId); if (cloudData.sectorOverrides) setSectorOverrides(prev => ({ ...prev, ...cloudData.sectorOverrides }));
+                  if (cloudData.manualPrices) setManualPrices(cloudData.manualPrices); 
+                  if (cloudData.ldcpMap) setLdcpMap(cloudData.ldcpMap); 
+                  if (cloudData.priceTimestamps) setPriceTimestamps(cloudData.priceTimestamps);
+                  if (cloudData.currentPortfolioId) setCurrentPortfolioId(cloudData.currentPortfolioId); 
+                  if (cloudData.sectorOverrides) setSectorOverrides(prev => ({ ...prev, ...cloudData.sectorOverrides }));
                   if (cloudData.scannerState) setScannerState(cloudData.scannerState); 
                   if (cloudData.brokers && Array.isArray(cloudData.brokers) && cloudData.brokers.length > 0) { setBrokers(cloudData.brokers); localStorage.setItem('psx_brokers', JSON.stringify(cloudData.brokers)); }
                   if (cloudData.geminiApiKey) { setUserApiKey(cloudData.geminiApiKey); setGeminiApiKey(cloudData.geminiApiKey); localStorage.setItem('psx_gemini_api_key', cloudData.geminiApiKey); }
                   if (cloudData.scrapingApiKey) { setUserScraperKey(cloudData.scrapingApiKey); setScrapingApiKey(cloudData.scrapingApiKey); localStorage.setItem('psx_scraping_api_key', cloudData.scrapingApiKey); }
                   if (cloudData.webScrapingAIKey) { setUserWebScrapingAIKey(cloudData.webScrapingAIKey); setWebScrapingAIKey(cloudData.webScrapingAIKey); localStorage.setItem('psx_webscraping_ai_key', cloudData.webScrapingAIKey); }
+                  
+                  console.log("✅ Successfully loaded user data from Google Drive!");
+                  // Delay allowing auto-saves to ensure React has fully rendered the restored data
+                  setTimeout(() => { isReadyToSave.current = true; }, 2000);
+              } else {
+                  console.log("⚠️ No Google Drive data found. Assuming brand new user.");
+                  isReadyToSave.current = true;
               }
-          } catch (e) { console.error("Drive Load Error", e); } finally { setIsCloudSyncing(false); isReadyToSave.current = true; }
+          } catch (e) { 
+              console.error("❌ CRITICAL: Google Drive Load Error", e); 
+              alert("Failed to sync with Google Drive. Your data is safe in the cloud, but could not be loaded right now. Please refresh the page. Do NOT add new transactions.");
+              // PREVENT OVERWRITING DATA: Keep isReadyToSave false!
+              isReadyToSave.current = false; 
+          } finally { 
+              setIsCloudSyncing(false); 
+          }
       });
       if (!hasValidSession()) { setIsAuthChecking(false); setShowLogin(true); }
   }, []);
@@ -296,6 +322,7 @@ const App: React.FC = () => {
     return { totalValue, totalCost, unrealizedPL, unrealizedPLPercent, realizedPL, netRealizedPL, totalDividends: dividendSum, totalDividendTax: divTaxSum, dailyPL, dailyPLPercent, totalCommission, totalSalesTax, totalCDC, totalOtherFees, totalCGT, freeCash, cashInvestment: totalDeposits - totalWithdrawals, netPrincipal, peakNetPrincipal, totalDeposits, reinvestedProfits, roi, mwrr };
   }, [holdings, realizedTrades, portfolioTransactions, ldcpMap]); 
 
+  // Auto-Save ONLY runs if `isReadyToSave.current` is explicitly TRUE
   useEffect(() => { 
       if (driveUser || transactions.length > 0) { localStorage.setItem('psx_transactions', JSON.stringify(transactions)); localStorage.setItem('psx_portfolios', JSON.stringify(portfolios)); localStorage.setItem('psx_current_portfolio_id', currentPortfolioId); localStorage.setItem('psx_manual_prices', JSON.stringify(manualPrices)); localStorage.setItem('psx_ldcp_map', JSON.stringify(ldcpMap)); localStorage.setItem('psx_price_timestamps', JSON.stringify(priceTimestamps)); localStorage.setItem('psx_brokers', JSON.stringify(brokers)); localStorage.setItem('psx_sector_overrides', JSON.stringify(sectorOverrides)); localStorage.setItem('psx_scanner_state', JSON.stringify(scannerState)); localStorage.setItem('psx_trade_scan_results', JSON.stringify(tradeScanResults)); } 
       if (driveUser && isReadyToSave.current) { setIsCloudSyncing(true); const timer = setTimeout(async () => { await saveToDrive({ transactions, portfolios, currentPortfolioId, manualPrices, ldcpMap, priceTimestamps, brokers, sectorOverrides, scannerState, geminiApiKey: userApiKey, scrapingApiKey: userScraperKey, webScrapingAIKey: userWebScrapingAIKey }); if (transactions.length > 0) { await syncTransactionsToSheet(); if (!googleSheetId) { const id = await getGoogleSheetId(); setGoogleSheetId(id); } } setIsCloudSyncing(false); }, 3000); return () => clearTimeout(timer); } 
@@ -513,7 +540,6 @@ const App: React.FC = () => {
                                 <Key size={16} className={(!userApiKey || !userScraperKey) ? "text-rose-500 dark:text-rose-400" : "text-emerald-500 dark:text-emerald-400"} /> 
                                 <span>{(!userApiKey || !userScraperKey) ? "Save API Key" : "API Key"}</span> 
                             </button>
-                            {/* --- NEW BUTTON: ENABLE ALERTS --- */}
                             <button 
                                 onClick={requestNotificationPermission} 
                                 className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-amber-50 dark:hover:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-3 md:px-5 py-3 rounded-xl font-bold shadow-sm transition-all flex items-center justify-center gap-1.5 whitespace-nowrap text-xs md:text-sm"
