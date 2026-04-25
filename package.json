@@ -26,6 +26,7 @@
     "react-dom": "^18.2.0",
     "recharts": "^2.12.0",
     "sqlite3": "^5.1.7",
+    "web-push": "^3.6.7",
     "xlsx": "^0.18.5",
     "yahoo-finance2": "^2.11.3"
   },

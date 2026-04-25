@@ -1,1 +1,28 @@
-if(!self.define){let e,c={};const s=(s,i)=>(s=new URL(s+".js",i).href,c[s]||new Promise(c=>{if("document"in self){const e=document.createElement("script");e.src=s,e.onload=c,document.head.appendChild(e)}else e=s,importScripts(s),c()}).then(()=>{let e=c[s];if(!e)throw new Error(`Module ${s} didn’t register its module`);return e}));self.define=(i,n)=>{const r=e||("document"in self?document.currentScript.src:"")||location.href;if(c[r])return;let m={};const t=e=>s(e,r),o={module:{uri:r},exports:m,require:t};c[r]=Promise.all(i.map(e=>o[e]||t(e))).then(e=>(n(...e),m))}}define(["./workbox-8c29f6e4"],function(e){"use strict";self.skipWaiting(),e.clientsClaim(),e.precacheAndRoute([{url:"registerSW.js",revision:"1872c500de691dce40960bb85481de07"},{url:"index.html",revision:"77d8154114ac7861610adbf530da9a7f"},{url:"assets/vendor-l0sNRNKZ.js",revision:null},{url:"assets/vendor-BdE0L2vX-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv.js",revision:null},{url:"assets/index-Disjd3zc.js",revision:null},{url:"manifest.webmanifest",revision:"1c6c8cc2a4d6c7e87f46f8f09d50e9c9"}],{}),e.cleanupOutdatedCaches(),e.registerRoute(new e.NavigationRoute(e.createHandlerBoundToURL("index.html")))});
+// --- PUSH NOTIFICATION RECEIVER ---
+self.addEventListener('push', (event) => {
+    let data = { title: 'PSX Tracker', body: 'New alert triggered!' };
+    
+    if (event.data) {
+        data = event.data.json();
+    }
+
+    const options = {
+        body: data.body,
+        icon: '/pwa-192x192.png',
+        badge: '/pwa-64x64.png',
+        vibrate: [200, 100, 200, 100, 200, 100, 200],
+        requireInteraction: true // Keeps notification on screen until user dismisses it
+    };
+
+    event.waitUntil(
+        self.registration.showNotification(data.title, options)
+    );
+});
+
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+    event.waitUntil(
+        clients.openWindow('/')
+    );
+});
+

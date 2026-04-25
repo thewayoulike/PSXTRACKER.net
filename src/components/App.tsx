@@ -23,7 +23,7 @@ import { PortfolioHistoryChart } from './PortfolioHistoryChart';
 import { getSector } from '../services/sectors';
 import { fetchBatchPSXPrices, setScrapingApiKey, setWebScrapingAIKey, fetchAllPSXSymbols } from '../services/psxData';
 import { setGeminiApiKey } from '../services/gemini';
-import { Edit3, Plus, Trash2, PlusCircle, X, RefreshCw, Loader2, Coins, LogOut, Save, Briefcase, Key, LayoutDashboard, History, CheckCircle2, Pencil, Layers, ChevronDown, CheckSquare, Square, ChartCandlestick, CalendarClock, ArrowRightLeft, Calculator, TrendingUp } from 'lucide-react'; 
+import { Edit3, Plus, Trash2, PlusCircle, X, RefreshCw, Loader2, Coins, LogOut, Save, Briefcase, Key, LayoutDashboard, History, CheckCircle2, Pencil, Layers, ChevronDown, CheckSquare, Square, ChartCandlestick, CalendarClock, ArrowRightLeft, Calculator, TrendingUp, BellRing } from 'lucide-react'; 
 import { useIdleTimer } from '../hooks/useIdleTimer'; 
 import { ThemeToggle } from './ui/ThemeToggle'; 
 import * as Popover from '@radix-ui/react-popover'; 
@@ -93,6 +93,36 @@ const App: React.FC = () => {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [failedTickers, setFailedTickers] = useState<Set<string>>(new Set());
   const isReadyToSave = useRef(false);
+
+  // --- MOBILE PUSH NOTIFICATION REQUEST ---
+  const requestNotificationPermission = async () => {
+    try {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+            const registration = await navigator.serviceWorker.ready;
+            
+            // --- 🔴 PASTE YOUR PUBLIC KEY HERE ---
+            const publicKey = 'YOUR_PUBLIC_VAPID_KEY_HERE';
+            
+            const subscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: publicKey
+            });
+
+            await fetch('/api/save-subscription', {
+                method: 'POST',
+                body: JSON.stringify(subscription),
+                headers: { 'Content-Type': 'application/json' }
+            });
+            alert("Mobile Notifications Enabled! You will now receive alerts directly on your phone.");
+        } else {
+            alert("Notifications were denied. Please allow them in your browser settings.");
+        }
+    } catch (e) {
+        console.error("Push registration failed:", e);
+        alert("Failed to enable notifications. Ensure you are accessing the site via HTTPS.");
+    }
+  };
 
   const lastPriceUpdate = useMemo(() => { const times = Object.values(priceTimestamps); if (times.length === 0) return null; return times.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]; }, [priceTimestamps]);
   
@@ -166,16 +196,14 @@ const App: React.FC = () => {
   const handleTogglePortfolioSelection = (id: string) => { const newSet = new Set(combinedPortfolioIds); if (newSet.has(id)) { if (newSet.size > 1) newSet.delete(id); } else { newSet.add(id); } setCombinedPortfolioIds(newSet); };
   const handleSelectAllPortfolios = () => { setCombinedPortfolioIds(new Set(portfolios.map(p => p.id))); };
 
-  const handleSyncPrices = async (silent = false) => { 
-      const targetTickers = allSymbols.length > 0 ? allSymbols : Array.from(new Set(holdings.map(h => h.ticker))); 
-      if (targetTickers.length === 0) {
-          targetTickers.push("ENGRO");
-      }
+  const handleSyncPrices = useCallback(async (silent = false) => { 
+      const holdingTickers = holdings.map(h => h.ticker);
+      const combinedTickers = Array.from(new Set([...allSymbols, ...holdingTickers]));
+      const targetTickers = combinedTickers.length > 0 ? combinedTickers : ["ENGRO"];
 
       if (!silent) { setIsSyncing(true); setPriceError(false); setFailedTickers(new Set()); }
       try { 
           const newResults = await fetchBatchPSXPrices(targetTickers); 
-          const failed = new Set<string>(); 
           const validUpdates: Record<string, number> = {}; 
           const ldcpUpdates: Record<string, number> = {}; 
           const newSectors: Record<string, string> = {}; 
@@ -189,9 +217,7 @@ const App: React.FC = () => {
                   timestampUpdates[ticker] = now; 
                   if (data.ldcp > 0) ldcpUpdates[ticker] = data.ldcp; 
                   if (data.sector && data.sector !== 'Unknown Sector') { newSectors[ticker] = data.sector; } 
-              } else { 
-                  failed.add(ticker); 
-              } 
+              }
           }); 
           
           if (Object.keys(validUpdates).length > 0) { 
@@ -202,37 +228,29 @@ const App: React.FC = () => {
           if (Object.keys(newSectors).length > 0) { 
               setSectorOverrides(prev => ({ ...prev, ...newSectors })); 
           } 
-          if (failed.size > 0 && !silent) { 
-              setFailedTickers(failed); setPriceError(true); 
-          } 
       } catch (e) { 
           console.error(e); 
           if (!silent) setPriceError(true); 
       } finally { 
           if (!silent) setIsSyncing(false); 
       } 
-  };
+  }, [allSymbols, holdings]);
 
- // --- BULLETPROOF AUTO-UPDATER ---
   const syncRef = useRef(handleSyncPrices);
-  
-  // 1. Always keep the ref updated with the latest version of your app state
-  useEffect(() => {
-      syncRef.current = handleSyncPrices;
-  });
+  useEffect(() => { syncRef.current = handleSyncPrices; });
 
-  // 2. The timer will now fire 24/7 and never get trapped in a stale state
   useEffect(() => {
-      console.log("Starting 3-minute auto-updater...");
+      if (allSymbols.length > 0 || holdings.length > 0) {
+          handleSyncPrices(true);
+      }
+  }, [allSymbols.length, holdings.length]);
+
+  useEffect(() => {
       const intervalId = setInterval(() => {
-          console.log("Timer fired! Fetching latest prices...");
-          syncRef.current(true); // Force the sync using the fresh reference
-      }, 180000); // 180,000 ms = 3 minutes
-
+          syncRef.current(true); 
+      }, 180000); 
       return () => clearInterval(intervalId);
   }, []);
-  // --------------------------------
-  // --------------------------------
 
   useEffect(() => { if (brokers.length === 0) return; const generateFees = () => { let newTransactions: Transaction[] = []; brokers.forEach(broker => { if (!broker.annualFee || !broker.feeStartDate || broker.annualFee <= 0) return; let nextDueDate = new Date(broker.feeStartDate); nextDueDate.setFullYear(nextDueDate.getFullYear() + 1); const today = new Date(); while (nextDueDate <= today) { const feeYear = nextDueDate.getFullYear(); const txId = `auto-fee-${broker.id}-${feeYear}`; const exists = transactions.some(t => t.id === txId); if (!exists) { const feeDateStr = nextDueDate.toISOString().split('T')[0]; const newTx: Transaction = { id: txId, portfolioId: currentPortfolioId, ticker: 'ANNUAL FEE', type: 'ANNUAL_FEE', quantity: 1, price: broker.annualFee, date: feeDateStr, broker: broker.name, brokerId: broker.id, commission: 0, tax: 0, cdcCharges: 0, otherFees: 0, notes: `Annual Broker Fee (${feeYear})` }; newTransactions.push(newTx); } nextDueDate.setFullYear(nextDueDate.getFullYear() + 1); } }); if (newTransactions.length > 0) { setTransactions(prev => [...prev, ...newTransactions]); } }; generateFees(); }, [brokers, currentPortfolioId]); 
   useEffect(() => { if (portfolios.length > 0 && !portfolios.find(p => p.id === currentPortfolioId)) { setCurrentPortfolioId(portfolios[0].id); } }, [portfolios, currentPortfolioId]);
@@ -495,6 +513,13 @@ const App: React.FC = () => {
                                 <Key size={16} className={(!userApiKey || !userScraperKey) ? "text-rose-500 dark:text-rose-400" : "text-emerald-500 dark:text-emerald-400"} /> 
                                 <span>{(!userApiKey || !userScraperKey) ? "Save API Key" : "API Key"}</span> 
                             </button>
+                            {/* --- NEW BUTTON: ENABLE ALERTS --- */}
+                            <button 
+                                onClick={requestNotificationPermission} 
+                                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-amber-50 dark:hover:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-3 md:px-5 py-3 rounded-xl font-bold shadow-sm transition-all flex items-center justify-center gap-1.5 whitespace-nowrap text-xs md:text-sm"
+                            > 
+                                <BellRing size={16} /> Alerts
+                            </button>
                         </div>
 
                         <div className="flex items-center gap-4">
@@ -660,4 +685,3 @@ const App: React.FC = () => {
 };
 
 export default App;
- 
