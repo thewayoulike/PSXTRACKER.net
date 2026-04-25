@@ -10,22 +10,24 @@ const port = 3001;
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// 🛡️ Safety: Request Logger
-app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-    next();
-});
+// 🛡️ Safety Catch
+process.on('uncaughtException', (err) => console.error('💥 Server error:', err.message));
 
+// Push Notification Keys
 const publicVapidKey = 'BOQirLyVkFOMp0DGyxgzq8oraIRq5FVopRlewMjLCn3VuIih8rak8BM_iiLCxIkMvDAoFlj8XulePa3RsByI6sQ';
 const privateVapidKey = 'THsU_Jjbg6a1fv0Z3sNo4eRRIW5DQ3tAZnJdIw9_Wgo';
 webpush.setVapidDetails('mailto:support@psxtracker.com', publicVapidKey, privateVapidKey);
 
+// --- DATABASE SETUP (MULTI-USER UPDATE) ---
 const db = new Database('/var/www/psxtracker/psx_data.db', (err) => {
     if (err) console.error('❌ DB Error:', err.message);
     else {
         db.run("CREATE TABLE IF NOT EXISTS live_prices (ticker TEXT PRIMARY KEY, price REAL, ldcp REAL, updated_at TEXT)");
         db.run("CREATE TABLE IF NOT EXISTS user_data (email TEXT PRIMARY KEY, data TEXT)");
-        db.run("CREATE TABLE IF NOT EXISTS push_subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, subscription TEXT)");
+        
+        // Multi-user Notification Tables
+        db.run("CREATE TABLE IF NOT EXISTS user_subscriptions (email TEXT PRIMARY KEY, subscription TEXT)");
+        db.run("CREATE TABLE IF NOT EXISTS price_alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT, ticker TEXT, target_price REAL, condition TEXT, is_active INTEGER DEFAULT 1)");
     }
 });
 
@@ -34,11 +36,15 @@ const db = new Database('/var/www/psxtracker/psx_data.db', (err) => {
 // A. Load User Data
 app.get(['/api/load/:email', '/load/:email'], (req, res) => {
     db.get("SELECT data FROM user_data WHERE email = ?", [req.params.email], (err, row) => {
-        if (err) return res.status(500).json([]); // Return empty array on error
+        if (err) return res.status(500).json({ transactions: [], portfolios: [] });
         if (row && row.data) {
-            res.json(JSON.parse(row.data));
+            try {
+                res.json(JSON.parse(row.data));
+            } catch (e) {
+                res.json({ transactions: [], portfolios: [] });
+            }
         } else {
-            res.status(404).json({ transactions: [], portfolios: [] }); // Send valid empty structure
+            res.json({ transactions: [], portfolios: [] });
         }
     });
 });
@@ -54,16 +60,23 @@ app.post(['/api/save/:email', '/save/:email'], (req, res) => {
     );
 });
 
-// C. Save Push Subscription (FIXES THE 404 ERROR)
+// C. Save Push Subscription (MULTI-USER FIX)
 app.post(['/api/save-subscription', '/save-subscription'], (req, res) => {
-    const subscription = JSON.stringify(req.body);
-    db.run("INSERT INTO push_subscriptions (subscription) VALUES (?)", [subscription], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
+    const { email, subscription } = req.body;
+    
+    if (!email || !subscription) {
+        return res.status(400).json({ error: "Missing email or subscription data" });
+    }
+
+    db.run("INSERT INTO user_subscriptions (email, subscription) VALUES (?, ?) ON CONFLICT(email) DO UPDATE SET subscription = excluded.subscription", 
+        [email, JSON.stringify(subscription)], 
+        (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
     });
 });
 
-// D. Live Prices (With Date)
+// D. Live Prices
 app.get(['/api/live-prices', '/live-prices'], (req, res) => {
     db.all("SELECT * FROM live_prices", [], (err, rows) => {
         if (err) return res.status(500).json({});
@@ -83,6 +96,17 @@ app.get(['/api/proxy', '/proxy', '/api/quotes/:symbol/:range', '/quotes/:symbol/
         const data = await resp.text();
         res.send(data);
     } catch (err) { res.status(500).send(err.message); }
+});
+
+// F. Delete User
+app.delete(['/api/delete/:email', '/delete/:email'], (req, res) => {
+    db.run("DELETE FROM user_data WHERE email = ?", [req.params.email], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        // Also delete their alerts and subscriptions
+        db.run("DELETE FROM price_alerts WHERE email = ?", [req.params.email]);
+        db.run("DELETE FROM user_subscriptions WHERE email = ?", [req.params.email]);
+        res.json({ success: true });
+    });
 });
 
 app.listen(port, '0.0.0.0', () => console.log(`🚀 API Server running on port ${port}`));

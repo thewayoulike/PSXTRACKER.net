@@ -16,8 +16,9 @@ webpush.setVapidDetails('mailto:support@psxtracker.com', publicVapidKey, private
 
 const CHECK_INTERVAL = 300000; // 5 MINUTES (300,000ms)
 
-async function sendMobilePush(title, body) {
-    db.all("SELECT subscription FROM push_subscriptions", [], (err, rows) => {
+// --- 1. Send Push to a Specific Email ---
+async function sendMobilePush(email, title, body) {
+    db.all("SELECT subscription FROM user_subscriptions WHERE email = ?", [email], (err, rows) => {
         if (err || !rows) return;
         rows.forEach(row => {
             try {
@@ -29,16 +30,20 @@ async function sendMobilePush(title, body) {
     });
 }
 
+// --- 2. Check Alerts ---
 async function checkAlerts(currentPrices) {
     db.all("SELECT * FROM price_alerts WHERE is_active = 1", [], async (err, alerts) => {
         if (err || !alerts) return;
         for (const alert of alerts) {
             const livePrice = currentPrices[alert.ticker];
             if (!livePrice) continue;
+            
             let triggered = (alert.condition === 'ABOVE' && livePrice >= alert.target_price) || 
                             (alert.condition === 'BELOW' && livePrice <= alert.target_price);
+            
             if (triggered) {
-                await sendMobilePush(`🚀 Alert: ${alert.ticker}`, `${alert.ticker} hit ${livePrice}!`);
+                // Trigger the alert ONLY for the user's email
+                await sendMobilePush(alert.email, `🚀 Alert: ${alert.ticker}`, `${alert.ticker} hit ${livePrice}!`);
                 db.run("UPDATE price_alerts SET is_active = 0 WHERE id = ?", [alert.id]);
             }
         }
@@ -46,7 +51,6 @@ async function checkAlerts(currentPrices) {
 }
 
 // --- MAIN SCRAPER ENGINE ---
-
 async function runScraper() {
     console.log(`[${new Date().toLocaleString()}] 🚀 INITIALIZING STEALTH BROWSER (One-time launch)...`);
     
@@ -57,7 +61,6 @@ async function runScraper() {
     const context = await browser.newContext();
     const page = await context.newPage();
 
-    // The repeated task
     const performScrape = async () => {
         try {
             console.log(`[${new Date().toLocaleString()}] 🔄 Scraping PSX Market...`);
@@ -108,7 +111,6 @@ async function runScraper() {
     setInterval(performScrape, CHECK_INTERVAL);
 }
 
-// Catch top-level errors
 runScraper().catch(err => {
     console.error("💥 FATAL SCRAPER ERROR:", err);
     process.exit(1);
