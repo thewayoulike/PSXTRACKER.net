@@ -1,4 +1,3 @@
-/* Build Time: Sat Apr 25 01:48:02 CEST 2026 */
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Transaction, Holding, PortfolioStats, RealizedTrade, Portfolio, Broker, FoundDividend, EditableTrade } from '../types';
 import { Dashboard } from './DashboardStats';
@@ -168,11 +167,14 @@ const App: React.FC = () => {
   const handleSelectAllPortfolios = () => { setCombinedPortfolioIds(new Set(portfolios.map(p => p.id))); };
 
   const handleSyncPrices = async (silent = false) => { 
-      const uniqueTickers = Array.from(new Set(holdings.map(h => h.ticker))); 
-      if (uniqueTickers.length === 0) return; 
+      const targetTickers = allSymbols.length > 0 ? allSymbols : Array.from(new Set(holdings.map(h => h.ticker))); 
+      if (targetTickers.length === 0) {
+          targetTickers.push("ENGRO");
+      }
+
       if (!silent) { setIsSyncing(true); setPriceError(false); setFailedTickers(new Set()); }
       try { 
-          const newResults = await fetchBatchPSXPrices(uniqueTickers); 
+          const newResults = await fetchBatchPSXPrices(targetTickers); 
           const failed = new Set<string>(); 
           const validUpdates: Record<string, number> = {}; 
           const ldcpUpdates: Record<string, number> = {}; 
@@ -180,11 +182,11 @@ const App: React.FC = () => {
           const now = new Date().toISOString(); 
           const timestampUpdates: Record<string, string> = {}; 
           
-          uniqueTickers.forEach(ticker => { 
+          targetTickers.forEach(ticker => { 
               const data = newResults[ticker]; 
               if (data && data.price > 0) { 
                   validUpdates[ticker] = data.price; 
-                  timestampUpdates[ticker] = data.updated_at || now; 
+                  timestampUpdates[ticker] = now; 
                   if (data.ldcp > 0) ldcpUpdates[ticker] = data.ldcp; 
                   if (data.sector && data.sector !== 'Unknown Sector') { newSectors[ticker] = data.sector; } 
               } else { 
@@ -211,34 +213,26 @@ const App: React.FC = () => {
       } 
   };
 
-  // --- NEW: AUTO-UPDATER FOR LIVE PRICES (Strict PKT Schedule) ---
+ // --- BULLETPROOF AUTO-UPDATER ---
+  const syncRef = useRef(handleSyncPrices);
+  
+  // 1. Always keep the ref updated with the latest version of your app state
   useEffect(() => {
-      const intervalId = setInterval(() => {
-          // 1. Get current time strictly in PKT
-          const pktTimeString = new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" });
-          const pktDate = new Date(pktTimeString);
-          
-          const day = pktDate.getDay();
-          const hours = pktDate.getHours();
-          const minutes = pktDate.getMinutes();
-          
-          // 2. Monday to Friday only
-          const isWeekday = day >= 1 && day <= 5;
-          
-          // 3. Between 9:15 AM and 4:30 PM (16:30)
-          const isAfterOpen = hours > 9 || (hours === 9 && minutes >= 15);
-          const isBeforeClose = hours < 16 || (hours === 16 && minutes <= 30);
-          const isMarketOpen = isAfterOpen && isBeforeClose;
+      syncRef.current = handleSyncPrices;
+  });
 
-          // 4. Trigger sync
-          if (isWeekday && isMarketOpen && holdings.length > 0) {
-              console.log("Auto-updating live market prices (Market Open PKT)...");
-              handleSyncPrices(true);
-          }
-      }, 180000); // Runs every 3 minutes (180,000 ms)
+  // 2. The timer will now fire 24/7 and never get trapped in a stale state
+  useEffect(() => {
+      console.log("Starting 3-minute auto-updater...");
+      const intervalId = setInterval(() => {
+          console.log("Timer fired! Fetching latest prices...");
+          syncRef.current(true); // Force the sync using the fresh reference
+      }, 180000); // 180,000 ms = 3 minutes
 
       return () => clearInterval(intervalId);
-  }, [holdings]); // Depend on holdings so it knows which tickers to fetch
+  }, []);
+  // --------------------------------
+  // --------------------------------
 
   useEffect(() => { if (brokers.length === 0) return; const generateFees = () => { let newTransactions: Transaction[] = []; brokers.forEach(broker => { if (!broker.annualFee || !broker.feeStartDate || broker.annualFee <= 0) return; let nextDueDate = new Date(broker.feeStartDate); nextDueDate.setFullYear(nextDueDate.getFullYear() + 1); const today = new Date(); while (nextDueDate <= today) { const feeYear = nextDueDate.getFullYear(); const txId = `auto-fee-${broker.id}-${feeYear}`; const exists = transactions.some(t => t.id === txId); if (!exists) { const feeDateStr = nextDueDate.toISOString().split('T')[0]; const newTx: Transaction = { id: txId, portfolioId: currentPortfolioId, ticker: 'ANNUAL FEE', type: 'ANNUAL_FEE', quantity: 1, price: broker.annualFee, date: feeDateStr, broker: broker.name, brokerId: broker.id, commission: 0, tax: 0, cdcCharges: 0, otherFees: 0, notes: `Annual Broker Fee (${feeYear})` }; newTransactions.push(newTx); } nextDueDate.setFullYear(nextDueDate.getFullYear() + 1); } }); if (newTransactions.length > 0) { setTransactions(prev => [...prev, ...newTransactions]); } }; generateFees(); }, [brokers, currentPortfolioId]); 
   useEffect(() => { if (portfolios.length > 0 && !portfolios.find(p => p.id === currentPortfolioId)) { setCurrentPortfolioId(portfolios[0].id); } }, [portfolios, currentPortfolioId]);
@@ -333,8 +327,14 @@ const App: React.FC = () => {
           }
       });
 
-      const finalHoldings = Object.values(tempHoldings).filter(h => h.quantity > 0.0001).map(h => { const current = manualPrices[h.ticker] || h.avgPrice; const lastUpdated = priceTimestamps[h.ticker]; return { ...h, currentPrice: current, lastUpdated }; }); 
-      setHoldings(finalHoldings); setRealizedTrades(tempRealized); 
+      const finalHoldings = Object.values(tempHoldings).filter(h => h.quantity > 0.0001).map(h => { 
+          const current = manualPrices[h.ticker] || h.avgPrice; 
+          const lastUpdated = priceTimestamps[h.ticker]; 
+          return { ...h, currentPrice: current, lastUpdated }; 
+      }); 
+      
+      setHoldings([...finalHoldings]); 
+      setRealizedTrades([...tempRealized]); 
   }, [portfolioTransactions, manualPrices, priceTimestamps, sectorOverrides]);
   
   const handleTickerClick = (ticker: string) => { localStorage.setItem('psx_analyzer_mode', 'STOCK'); localStorage.setItem('psx_last_analyzed_ticker', ticker); setCurrentView('STOCKS'); };
@@ -660,3 +660,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+ 

@@ -4,8 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>PSX Portfolio Tracker</title>
-
-    <link rel="apple-touch-icon" href="/assets/pwa-192x192-DmfsSwuh-DmfsSwuh-DmfsSwuh-DmfsSwuh-DmfsSwuh-DmfsSwuh-DmfsSwuh-DmfsSwuh-DmfsSwuh-DmfsSwuh-DmfsSwuh-DmfsSwuh-DmfsSwuh-DmfsSwuh-DmfsSwuh-DmfsSwuh-DmfsSwuh-DmfsSwuh-DmfsSwuh-DmfsSwuh-DmfsSwuh.png">
     
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -36,7 +34,6 @@
         color: #0f172a;
         transition: background 0.3s ease, color 0.3s ease;
         -webkit-tap-highlight-color: transparent;
-        /* PERFORMANCE FIX: Promote body to its own layer to avoid full page repaints */
         transform: translateZ(0);
         will-change: background;
       }
@@ -46,7 +43,6 @@
         color: #f8fafc;
       }
 
-      /* Reduce Glass Blur on Mobile specifically */
       @media (max-width: 768px) {
         .backdrop-blur-xl {
            backdrop-filter: blur(12px) !important;
@@ -74,29 +70,9 @@
         color: #f8fafc;
       }
     </style>
-    <link rel="modulepreload" crossorigin href="/assets/vendor-BdE0L2vX-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv-BX-cPmTv.js">
-  <link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  
-<link rel="manifest" href="/assets/manifest-B9_IuZ6a.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>  <script type="module" crossorigin src="/assets/index-Disjd3zc.js"></script>
-<link rel="manifest" href="/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script></head>
+  <script>if("serviceWorker" in navigator){navigator.serviceWorker.getRegistrations().then(r=>r.forEach(sw=>sw.unregister()))}</script><script>if("serviceWorker" in navigator){navigator.serviceWorker.getRegistrations().then(r=>r.forEach(sw=>sw.unregister()))}</script><script>if("serviceWorker" in navigator){navigator.serviceWorker.getRegistrations().then(r=>r.forEach(sw=>sw.unregister()))}</script></head>
   <body>
     <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
